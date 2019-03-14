@@ -81,6 +81,9 @@ union bpf_attr;
 #include <linux/key.h>
 #include <trace/syscall.h>
 
+/* prinfo struct include */
+#include <linux/prinfo.h>
+
 /*
  * __MAP - apply a macro to syscall arguments
  * __MAP(n, m, t1, a1, t2, a2, ..., tn, an) will expand to
@@ -941,6 +944,6 @@ asmlinkage long sys_pkey_free(int pkey);
 asmlinkage long sys_statx(int dfd, const char __user *path, unsigned flags,
 			  unsigned mask, struct statx __user *buffer);
 
-asmlinkage long sys_hello(void);
+asmlinkage long sys_ptree(struct prinfo *buf, int *nr);
 
 #endif
