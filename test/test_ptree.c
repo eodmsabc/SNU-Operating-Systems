@@ -13,7 +13,7 @@ void print_prinfo(struct prinfo p) {
 int main(void) {
     printf("Project 1 Test Program Started.\n");
 
-    struct prinfo p[NR_MAX];
+    struct prinfo p[NR_MAX+1];
     int nr = NR_MAX;
     int retval = 1;
     int tab_level = 1;
