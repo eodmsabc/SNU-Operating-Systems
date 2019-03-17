@@ -1,5 +1,6 @@
 #include <asm/unistd.h>
 #include <linux/kernel.h>
+#include <linux/syscalls.h>
 #include <linux/cred.h>
 #include <linux/uaccess.h>
 #include <linux/module.h>
@@ -76,7 +77,7 @@ static int add_new_task(struct task_struct *task, struct list_head *t_list)
  *
  * If the number of processes now running is smaller than nr, 'nr' will be updated.
  */
-asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
+SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 {
     int32_t k_nr;
     int32_t count = 0;
@@ -129,7 +130,7 @@ asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
         
         if (!prinfo_constructor(dummy_ptr, current_item->task)) {
-            //printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
+            printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
             continue;
         }
 
