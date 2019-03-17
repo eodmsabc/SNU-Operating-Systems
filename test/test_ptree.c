@@ -4,7 +4,7 @@
 #include <errno.h>
 #include <linux/prinfo.h>
 
-#define NR_MAX 20
+#define NR_MAX 200
 
 void print_prinfo(struct prinfo p) {
     printf("%s, %d, %lld, %d, %d, %d, %lld\n", p.comm, p.pid, p.state, p.parent_pid, p.first_child_pid, p.next_sibling_pid, p.uid);
@@ -13,7 +13,7 @@ void print_prinfo(struct prinfo p) {
 int main(void) {
     printf("Project 1 Test Program Started.\n");
 
-    struct prinfo p[NR_MAX+1];
+    struct prinfo p[NR_MAX];
     int nr = NR_MAX;
     int retval = 1;
     int tab_level = 1;
@@ -48,6 +48,7 @@ int main(void) {
     }
 
     printf("\nReturn Value : %d\n", retval);
+    printf("Input nr : %d, current nr : %d\n", NR_MAX, nr);
 
     printf("Project 1 Test Program Finished.\n");
     return 0;

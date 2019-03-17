@@ -99,7 +99,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 
     /* copy nr from user space */
     tmp_int32 = copy_from_user((void*) &k_nr, (void*) nr, sizeof(int32_t));
-    if (tmp_int32 != 0) {
+    if (tmp_int32) {
         printk(KERN_ERR "[PROJ1] could not copy nr from userspace\n");
         return -EFAULT;
     }
@@ -129,7 +129,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
         
-        if (!prinfo_constructor(dummy_ptr, current_item->task)) {
+        if (prinfo_constructor(dummy_ptr, current_item->task)) {
             printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
             continue;
         }
@@ -157,7 +157,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
     }
 
     tmp_int32 = copy_to_user((void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
-    if (!tmp_int32) {
+    if (tmp_int32) {
         printk(KERN_ERR "[PROJ1] could not copy %d bytes to user mem\n", tmp_int32);
     }
 
