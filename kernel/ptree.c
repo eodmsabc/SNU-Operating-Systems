@@ -80,7 +80,7 @@ asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
 {
     int32_t k_nr;
     int32_t count = 0;
-    int32_t tmp_int32;
+    int32_t tmp_int32 = 0;
     struct prinfo *k_buf;
     struct prinfo *dummy_ptr;
     struct prinfo storage;
@@ -118,8 +118,10 @@ asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
 
     read_lock(&tasklist_lock);
 
-    add_new_task(&init_task, &tasks_to_visit);
-
+    add_new_task(
+            pid_task(find_get_pid(1), PIDTYPE_PID)->parent,
+            &tasks_to_visit);
+    
     while(!list_empty(&tasks_to_visit)) {
 
         current_item = list_entry(tasks_to_visit.next, struct task_list, list);
@@ -127,7 +129,7 @@ asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
         
         if (!prinfo_constructor(dummy_ptr, current_item->task)) {
-            printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
+            //printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
             continue;
         }
 
@@ -148,13 +150,13 @@ asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
         k_nr = count;
         tmp_int32 = copy_to_user((void*) nr, (void*) &count, sizeof(int32_t));
         
-        if (tmp_int32 != 0) {
+        if (!tmp_int32) {
             printk(KERN_ERR "[PROJ1] could not update user variable nr\n");
         }
     }
 
     tmp_int32 = copy_to_user((void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
-    if (tmp_int32 != 0) {
+    if (!tmp_int32) {
         printk(KERN_ERR "[PROJ1] could not copy %d bytes to user mem\n", tmp_int32);
     }
 

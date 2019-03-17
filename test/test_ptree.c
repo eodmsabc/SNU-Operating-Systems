@@ -4,7 +4,7 @@
 #include <errno.h>
 #include <linux/prinfo.h>
 
-#define NR_MAX 16
+#define NR_MAX 20
 
 void print_prinfo(struct prinfo p) {
     printf("%s, %d, %lld, %d, %d, %d, %lld\n", p.comm, p.pid, p.state, p.parent_pid, p.first_child_pid, p.next_sibling_pid, p.uid);
