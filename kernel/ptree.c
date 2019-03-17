@@ -30,7 +30,7 @@ static int prinfo_constructor(struct prinfo *item, struct task_struct *task)
 
     item->uid               = (int64_t) task->cred->uid.val;
 
-    memcpy((void*)(item->comm), (void*)(task->comm), 64);
+    memcpy((void*) (item->comm), (void*) (task->comm), 64);
     item->comm[63] = '\0';
 
     return 0;
@@ -62,7 +62,7 @@ static int add_new_task(struct task_struct *task, struct list_head *t_list)
     }
 
     new_node->task = task;
-    INIT_LIST_HEAD(&new_node->list);
+    INIT_LIST_HEAD(&(new_node->list));
     list_add(&new_node->list, t_list);
 
     return 0;
@@ -76,7 +76,7 @@ static int add_new_task(struct task_struct *task, struct list_head *t_list)
  *
  * If the number of processes now running is smaller than nr, 'nr' will be updated.
  */
-asmlinkage long sys_ptree(struct prinfo *buf, int *nr)
+asmlinkage long sys_ptree(struct prinfo __user *buf, int __user *nr)
 {
     int32_t k_nr;
     int32_t count = 0;
@@ -97,9 +97,9 @@ asmlinkage long sys_ptree(struct prinfo *buf, int *nr)
     }
 
     /* copy nr from user space */
-    tmp_int32 = copy_from_user ((void*) &k_nr, (void*) nr, sizeof(int32_t));
+    tmp_int32 = copy_from_user((void*) &k_nr, (void*) nr, sizeof(int32_t));
     if (tmp_int32 != 0) {
-        printk(KERN_ERR "[PROJ1] cound not copy nr from userspace\n");
+        printk(KERN_ERR "[PROJ1] could not copy nr from userspace\n");
         return -EFAULT;
     }
 
@@ -127,7 +127,7 @@ asmlinkage long sys_ptree(struct prinfo *buf, int *nr)
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
         
         if (!prinfo_constructor(dummy_ptr, current_item->task)) {
-            //printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
+            printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
             continue;
         }
 
@@ -149,13 +149,13 @@ asmlinkage long sys_ptree(struct prinfo *buf, int *nr)
         tmp_int32 = copy_to_user((void*) nr, (void*) &count, sizeof(int32_t));
         
         if (tmp_int32 != 0) {
-            printk(KERN_ERR "[PROJ1] count not update user variable nr\n");
+            printk(KERN_ERR "[PROJ1] could not update user variable nr\n");
         }
     }
 
     tmp_int32 = copy_to_user((void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
     if (tmp_int32 != 0) {
-        printk(KERN_ERR "[PROJ1] count not copy %d bytes to user mem\n", tmp_int32);
+        printk(KERN_ERR "[PROJ1] could not copy %d bytes to user mem\n", tmp_int32);
     }
 
     list_for_each_safe(pos, q, &tasks_to_visit) {
