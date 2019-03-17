@@ -11,7 +11,7 @@
 #include <linux/sched/task.h>
 
 /*
- * extracts necessary information from task_struct and initializes prinfo.
+ * extract necessary information from task_struct and initializes prinfo.
  */
 static int prinfo_constructor(struct prinfo *item, struct task_struct *task)
 {
@@ -40,7 +40,7 @@ static int prinfo_constructor(struct prinfo *item, struct task_struct *task)
 /*
  * Wrapper struct of task_struct with linux list
  * 
- * This struct will be used as list for implementing non-recursive DFS.
+ * This struct will be used as linked STACK for implementing non-recursive DFS.
  */
 struct task_list
 {
@@ -49,7 +49,8 @@ struct task_list
 };
 
 /*
- * creates new node and link into list.
+ * create new node and link into list.
+ * insert new node in front of the original list.
  */
 static int add_new_task(struct task_struct *task, struct list_head *t_list)
 {
@@ -110,7 +111,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
         return -EINVAL;
     }
 
-    /* allocates memory for prinfo struct array which will temporarily store process information */
+    /* allocate memory for prinfo struct array which will temporarily store process information */
     k_buf = (struct prinfo*) kmalloc(sizeof(struct prinfo) * k_nr, GFP_KERNEL);
     if (!k_buf) {
         printk(KERN_ERR "[PROJ1] kmalloc for struct prinfo *buf failed\n");
@@ -119,12 +120,14 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 
     read_lock(&tasklist_lock);
 
+    /* DFS starts from swapper(pid:0) task */
     add_new_task(
             pid_task(find_get_pid(1), PIDTYPE_PID)->parent,
             &tasks_to_visit);
     
     while(!list_empty(&tasks_to_visit)) {
 
+        /* retrieve first item in the list */
         current_item = list_entry(tasks_to_visit.next, struct task_list, list);
 
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
@@ -135,7 +138,13 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
         }
 
         list_del(&(current_item->list));
+
         if(!list_empty_careful(&(current_item->task->children))) {
+
+            /* 
+             * iterate *backwards* in children and push each task into STACK
+             * to maintain original order of children.
+             */
             list_for_each_prev_safe(pos, q, &(current_item->task->children)) {
                 add_new_task(
                         list_entry(pos, struct task_struct, sibling),
@@ -147,6 +156,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 
     read_unlock(&tasklist_lock);
 
+    /* update nr */
     if (count < k_nr) {
         k_nr = count;
         tmp_int32 = copy_to_user((void*) nr, (void*) &count, sizeof(int32_t));
@@ -156,16 +166,19 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
         }
     }
 
+    /* copy k_buf to user buf */
     tmp_int32 = copy_to_user((void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
     if (tmp_int32) {
         printk(KERN_ERR "[PROJ1] could not copy %d bytes to user mem\n", tmp_int32);
     }
 
+    /* free all nodes in task list */
     list_for_each_safe(pos, q, &tasks_to_visit) {
         current_item = list_entry(pos, struct task_list, list);
         list_del(pos);
         kfree(current_item);
     }
+    /* free prinfo buffer */
     kfree(k_buf);
 
     return count;
