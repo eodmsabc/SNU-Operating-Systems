@@ -31,7 +31,7 @@ int main(void) {
     print_prinfo(p[0]);
     prev_pid[tab_level - 1] = p[0].pid;
 
-    for (int i = 0; i < nr; i++) {
+    for (int i = 1; i < nr; i++) {
         if (prev_pid[tab_level - 1] != p[i].parent_pid) {
             if (p[i - 1].pid == p[i].parent_pid) {
                 tab_level++;
@@ -47,7 +47,7 @@ int main(void) {
         print_prinfo(p[i]);
     }
 
-    printf("Return Value : %d\n", retval);
+    printf("\nReturn Value : %d\n", retval);
 
     printf("Project 1 Test Program Finished.\n");
     return 0;
