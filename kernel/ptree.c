@@ -98,6 +98,13 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
         return -EINVAL;
     }
 
+    /* check user space's address of nr is safe. access_ok return nonzero value when address is safe. */
+    if(!access_ok(VERIFY_WRITE, nr, sizeof(int32_t)))
+    {
+        printk(KERN_ALERT "[PROJ1] int32_t nr's address in userspace is unsafe. exit ptree syscall.\n");
+        return -EFAULT;
+    }
+
     /* copy nr from user space */
     tmp_int32 = copy_from_user((void*) &k_nr, (void*) nr, sizeof(int32_t));
     if (tmp_int32) {
@@ -159,11 +166,26 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
     /* update nr */
     if (count < k_nr) {
         k_nr = count;
+
+        /* check user space's address of nr is safe. access_ok return nonzero value when address is safe.*/
+		if(!access_ok(VERIFY_WRITE, nr, sizeof(int32_t)))
+		{
+			printk(KERN_ALERT "[PROJ1] int32_t nr's address in userspace is unsafe. exit ptree syscall.\n");
+			return -EFAULT;
+		}
+        
         tmp_int32 = copy_to_user((void*) nr, (void*) &count, sizeof(int32_t));
         
         if (!tmp_int32) {
             printk(KERN_ERR "[PROJ1] could not update user variable nr\n");
         }
+    }
+
+    /* check user space's address of user buf is safe. access_ok return nonzero value when address is safe. */
+    if(!access_ok(VERIFY_WRITE, buf, sizeof(struct prinfo) * k_nr))
+    {
+        printk(KERN_ALERT "[PROJ1] struct prinfo buf's address in userspace is unsafe. exit ptree syscall.\n");
+        return -EFAULT;
     }
 
     /* copy k_buf to user buf */
