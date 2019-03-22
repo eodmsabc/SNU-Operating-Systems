@@ -1,5 +1,5 @@
-#ifndef __PROJ1_LINUX_PTREE_H__
-#define __PROJ1_LINUX_PTREE_H__
+#ifndef __PROJ1_LINUX_PRINFO_H__
+#define __PROJ1_LINUX_PRINFO_H__
 
 struct prinfo {
     int64_t state;
