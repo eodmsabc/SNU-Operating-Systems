@@ -128,9 +128,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
     read_lock(&tasklist_lock);
 
     /* DFS starts from swapper(pid:0) task */
-    add_new_task(
-            pid_task(find_get_pid(1), PIDTYPE_PID)->parent,
-            &tasks_to_visit);
+    add_new_task(&init_task, &tasks_to_visit);
     
     while(!list_empty(&tasks_to_visit)) {
 
