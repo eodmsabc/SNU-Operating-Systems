@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # 메모리 카드 위치 인자 못받으면 종료.
-sudo echo "script start"
+echo "this scripts need to get sudo. requiring sudo..."
+sudo echo "get sudo. script start"
 
 if [[ -n "$1" ]]
 then
