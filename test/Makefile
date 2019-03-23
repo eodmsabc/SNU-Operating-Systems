@@ -1,6 +1,6 @@
 CC = arm-linux-gnueabi-gcc
 OBJS = test_ptree.c
-TARGET = test
+TARGET = test.o
 
 .SUFFIXES : .c .o
 

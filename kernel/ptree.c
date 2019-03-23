@@ -56,10 +56,12 @@ static int add_new_task(struct task_struct *task, struct list_head *t_list)
 {
     struct task_list *new_node;
 
-    new_node = (struct task_list*) kmalloc(sizeof(struct task_list), GFP_KERNEL);
+    new_node = (struct task_list*)
+        kmalloc(sizeof(struct task_list), GFP_KERNEL);
 
     if (!new_node) {
-        printk(KERN_ERR "[PROJ1] kmalloc for new item in task list has failed\n");
+        printk(KERN_ERR
+                "[PROJ1] kmalloc for new item in task list has failed.\n");
         return -EFAULT;
     }
 
@@ -71,12 +73,29 @@ static int add_new_task(struct task_struct *task, struct list_head *t_list)
 }
 
 /*
+ * delete & frees every node in task_list
+ */
+static void del_tasklist(struct list_head *t_list)
+{
+    struct list_head *pos;
+    struct list_head *q;
+    struct task_list *item;
+
+    list_for_each_safe(pos, q, t_list) {
+        item = list_entry(pos, struct task_list, list);
+        list_del(pos);
+        kfree(item);
+    }
+}
+
+/*
  * New system call "ptree"
  *
  * traverses all process tree and copies the information into 'buf'
  * while 'buf' is user-area which can store 'nr' number of prinfo struct.
  *
- * If the number of processes now running is smaller than nr, 'nr' will be updated.
+ * If the number of processes now running is smaller than nr,
+ * 'nr' will be updated.
  */
 SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 {
@@ -94,34 +113,39 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
 
     /* NULL Pointer check for parameters buf and nr */
     if (!buf || !nr) {
-        printk(KERN_ERR "[PROJ1] buf or nr has null pointer\n");
+        printk(KERN_ERR "[PROJ1] buf or nr has null pointer.\n");
         return -EINVAL;
     }
 
-    /* check user space's address of nr is safe. access_ok return nonzero value when address is safe. */
+    /* check user space's address of nr is safe.
+     * access_ok return nonzero when address is safe. */
     if(!access_ok(VERIFY_WRITE, nr, sizeof(int32_t)))
     {
-        printk(KERN_ALERT "[PROJ1] int32_t nr's address in userspace is unsafe. exit ptree syscall.\n");
+        printk(KERN_ALERT
+                "[PROJ1] int32_t nr's address 0x%p "
+                "in userspace is unsafe. exit ptree syscall.\n",
+                nr);
         return -EFAULT;
     }
 
     /* copy nr from user space */
     tmp_int32 = copy_from_user((void*) &k_nr, (void*) nr, sizeof(int32_t));
     if (tmp_int32) {
-        printk(KERN_ERR "[PROJ1] could not copy nr from userspace\n");
+        printk(KERN_ERR "[PROJ1] could not copy nr from userspace.\n");
         return -EFAULT;
     }
 
     /* return -EINVAL when nr is invalid */
     if (k_nr < 1) {
-        printk(KERN_ERR "[PROJ1] invalid nr value: %d\n", k_nr);
+        printk(KERN_ERR "[PROJ1] invalid nr value: %d .\n", k_nr);
         return -EINVAL;
-    }
 
-    /* allocate memory for prinfo struct array which will temporarily store process information */
+    }
+    /* allocate memory for prinfo struct array
+     * which will temporarily store process information */
     k_buf = (struct prinfo*) kmalloc(sizeof(struct prinfo) * k_nr, GFP_KERNEL);
     if (!k_buf) {
-        printk(KERN_ERR "[PROJ1] kmalloc for struct prinfo *buf failed\n");
+        printk(KERN_ERR "[PROJ1] kmalloc for struct prinfo *buf failed.\n");
         return -EFAULT;
     }
 
@@ -138,7 +162,7 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
         dummy_ptr = (count++ < k_nr) ? &k_buf[count - 1] : &storage;
         
         if (prinfo_constructor(dummy_ptr, current_item->task)) {
-            printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping\n");
+            printk(KERN_ERR "[PROJ1] prinfo constructor error - skipping.\n");
             continue;
         }
 
@@ -165,39 +189,50 @@ SYSCALL_DEFINE2 (ptree, struct prinfo __user *, buf, int __user *, nr)
     if (count < k_nr) {
         k_nr = count;
 
-        /* check user space's address of nr is safe. access_ok return nonzero value when address is safe.*/
-		if(!access_ok(VERIFY_WRITE, nr, sizeof(int32_t)))
-		{
-			printk(KERN_ALERT "[PROJ1] int32_t nr's address in userspace is unsafe. exit ptree syscall.\n");
-			return -EFAULT;
-		}
+        /* check user space's address of nr is safe.
+         * access_ok return nonzero when address is safe.*/
+        if(!access_ok(VERIFY_WRITE, nr, sizeof(int32_t)))
+        {
+            printk(KERN_ALERT
+                    "[PROJ1] int32_t nr's address 0x%p "
+                    "in userspace is unsafe. exit ptree syscall.\n",
+                    nr);
+            del_tasklist(&tasks_to_visit);
+            kfree(k_buf);
+            return -EFAULT;
+        }
         
-        tmp_int32 = copy_to_user((void*) nr, (void*) &count, sizeof(int32_t));
+        tmp_int32 = copy_to_user((void*) nr, (void*) &k_nr, sizeof(int32_t));
         
         if (!tmp_int32) {
-            printk(KERN_ERR "[PROJ1] could not update user variable nr\n");
+            printk(KERN_ERR "[PROJ1] could not update user variable nr.\n");
         }
-    }
 
-    /* check user space's address of user buf is safe. access_ok return nonzero value when address is safe. */
+    }
+    /* check user space's address of user buf is safe.
+     * access_ok return nonzero when address is safe. */
     if(!access_ok(VERIFY_WRITE, buf, sizeof(struct prinfo) * k_nr))
     {
-        printk(KERN_ALERT "[PROJ1] struct prinfo buf's address in userspace is unsafe. exit ptree syscall.\n");
+        printk(KERN_ALERT
+                "[PROJ1] struct prinfo buf's address 0x%p"
+                "in userspace is unsafe. exit ptree syscall.\n",
+                buf);
+        del_tasklist(&tasks_to_visit);
+        kfree(k_buf);
         return -EFAULT;
     }
 
     /* copy k_buf to user buf */
-    tmp_int32 = copy_to_user((void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
+    tmp_int32 = copy_to_user(
+            (void*) buf, (void*) k_buf, sizeof(struct prinfo) * k_nr);
     if (tmp_int32) {
-        printk(KERN_ERR "[PROJ1] could not copy %d bytes to user mem\n", tmp_int32);
+        printk(KERN_ERR
+                "[PROJ1] could not copy %d bytes to user space.\n",
+                tmp_int32);
     }
 
-    /* free all nodes in task list */
-    list_for_each_safe(pos, q, &tasks_to_visit) {
-        current_item = list_entry(pos, struct task_list, list);
-        list_del(pos);
-        kfree(current_item);
-    }
+    /* free tasks_to_visit */
+    del_tasklist(&tasks_to_visit);
     /* free prinfo buffer */
     kfree(k_buf);
 
