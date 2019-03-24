@@ -31,8 +31,10 @@ static int prinfo_constructor(struct prinfo *item, struct task_struct *task)
 
     item->uid               = (int64_t) task->cred->uid.val;
 
-    memcpy((void*) (item->comm), (void*) (task->comm), 64);
-    item->comm[63] = '\0';
+    memcpy((void*) (item->comm), (void*) (task->comm), TASK_COMM_LEN);
+    memset((void*) &(item->comm[TASK_COMM_LEN]),
+            0,
+            sizeof(char) * (64 - TASK_COMM_LEN));
 
     return 0;
 }
