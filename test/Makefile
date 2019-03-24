@@ -1,13 +1,15 @@
 CC = arm-linux-gnueabi-gcc
-OBJS = test_ptree.c
-TARGET = test.o
+CFLAGS=-I ../include
+OBJS = test_ptree.o
+TARGET = test
 
 .SUFFIXES : .c .o
 
 all : $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) -I ../include $(OBJS) -o $(TARGET)
+	$(CC) -o $@ $(OBJS)
 
 clean :
 	rm -f $(TARGET)
+	rm -f *.o
