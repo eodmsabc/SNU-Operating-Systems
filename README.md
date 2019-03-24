@@ -3,7 +3,6 @@
 
 ## Let's Build a Kernel
 
----
 
 바쁘신 조교님들을 위한 영역.
 
@@ -26,7 +25,6 @@ $ ./kernelbootflash.sh <SD card device node>
 
 ## Project Overview & Goals
 
----
 
 타이젠 커널에 `ptree`라는 시스템 콜을 추가하는 프로젝트이다.
 
@@ -44,7 +42,6 @@ int ptree(struct prinfo *buf, int *nr);
 
 ## High Level Design
 
----
 
 ##### Adding a system call
 
@@ -124,7 +121,6 @@ int ptree(struct prinfo *buf, int *nr);
 
 ## Our Implementation
 
----
 
 먼저 구현한 함수/구조체들에 대해 간단히 설명을 하고 넘어가자.
 
@@ -278,7 +274,6 @@ while(!list_empty(&tasks_to_visit)) {
 
 ## Test Results and Process Tree Investigation
 
----
 
 ##### Test Results
 
@@ -331,7 +326,6 @@ while(!list_empty(&tasks_to_visit)) {
 
 ## Lessons Learned
 
----
 
 아래의 목록은 중요도와 무관하게 나열되어있다.
 
