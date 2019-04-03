@@ -419,14 +419,42 @@ int write_lock_release(struct rotation_lock *rot_lock)
     return 0
 }
 
+// inform writers who relevant at current lotation.
 void inform_writer_at_current_lotation()
 {
+    struct rotation_lock *curr;
+    int curr_range;
+    int curr_degree;
 
+    list_for_each_entry(curr, writer_waiting_list, list)   
+    {
+        curr_degree = curr->degree;
+        curr_range = curr->range;
+
+        if(value_in_area(curr_degree, curr_range, current_lotation))    // inform waiting writer in current rotation.
+        {
+            complete(&(curr->comp));
+        }
+    }
 }
 
+// inform readers who relevant at current lotation.
 void inform_reader_at_current_lotation()
 {
+    struct rotation_lock *curr;
+    int curr_range;
+    int curr_degree;
 
+    list_for_each_entry(curr, reader_waiting_list, list)   
+    {
+        curr_degree = curr->degree;
+        curr_range = curr->range;
+
+        if(value_in_area(curr_degree, curr_range, current_lotation))    // inform waiting reader in current rotation.
+        {
+            complete(&(curr->comp));
+        }
+    }
 }
 
 /*
@@ -499,6 +527,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
         spin_unlock_irqrestore(&lock, flags);
         wait_for_completion(&(rot_lock->comp));
         spin_lock_irqsave(&lock, flags);
+        reinit_completion(&(rot_lock->comp)); // if wake up, completion need to reinitiating because completion has memory of complete(). multiple complete, multiple no-wait.
     }
     list_del(&(rot_lock->list));   // delete from read waiting list.
 
@@ -517,6 +546,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
 SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
 {
     struct rotation_lock *rot_lock;
+    int retval;
 
     if(degree >= 360 || degree < 0)
     {
@@ -553,6 +583,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
         spin_unlock_irqrestore(&lock, flags);
         wait_for_completion(&(rot_lock->comp));
         spin_lock_irqsave(&lock, flags);
+        reinit_completion(&(rot_lock->comp)); // if wake up, completion need to reinitiating because completion has memory of complete(). multiple complete, multiple no-wait.
     }
     list_del(&(rot_lock->list));   // delete from writer waiting list.
 
@@ -577,6 +608,11 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
 
 SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
 {
+    struct rotation_lock *rot_lock;
+    struct rotation_lock *waiting_writer;
+    struct rotation_lock *waiting_reader;
+    int retval;
+
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
@@ -589,9 +625,7 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         return -EINVAL;
     }
 
-    struct rotation_lock *rot_lock;
-    struct rotation_lock *waiting_writer;
-    struct rotation_lock *waiting_reader;
+    
 
     spin_lock_irqsave(&lock, flags);
 
@@ -604,12 +638,17 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         return -EFAULT;
     }
 
-    read_lock_release(rot_lock) //change current state.
-    
-    if(waiting_writer = iswatingWriter())
+    retval = read_lock_release(rot_lock) //change current state.
+    if(retval != 0)     
     {
-        complete(&(waiting_writer->comp));
+        spin_unlock_irqrestore(&lock, flags);
+        kfree(rot_lock);
+        printk(KERN_ERR "[PROJ2] read_lock_release has failed.\n");
+        return -EFAULT;
     }
+    
+    inform_writer_at_current_lotation();
+    // no need to inform reader because readers doesn't care reader.
     
     spin_unlock_irqrestore(&lock, flags);
     kfree(rot_lock); // free rot_lock.
@@ -618,6 +657,12 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
 
 SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
 {
+
+    struct rotation_lock *rot_lock;
+    struct rotation_lock *waiting_writer;
+    struct rotation_lock *waiting_reader;
+    int retval;
+
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
@@ -630,10 +675,6 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         return -EINVAL;
     }
 
-    struct rotation_lock *rot_lock;
-    struct rotation_lock *waiting_writer;
-    struct rotation_lock *waiting_reader;
-
     spin_lock_irqsave(&lock, flags);
 
     rot_lock = pop_node(degree, range, writer_active_list);
@@ -645,16 +686,18 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         return -EFAULT;
     }
     
-    write_lock_release() //change current state.
+    retval = write_lock_release(rot_lock) //change current state.
+    if(retval != 0)     
+    {
+        spin_unlock_irqrestore(&lock, flags);
+        kfree(rot_lock);
+        printk(KERN_ERR "[PROJ2] write_lock_release has failed.\n");
+        return -EFAULT;
+    }
 
-    if(waiting_writer = iswatingWriter())
-    {
-        complete(&(waiting_writer->comp));
-    }
-    else if(waiting_reader = iswaitingReader())
-    {
-        complete(&(waiting_reader->comp));
-    }
+    inform_writer_at_current_lotation();
+    inform_reader_at_current_lotation();
+    
     spin_unlock_irqrestore(&lock, flags);
 
     kfree(rot_lock); // free rot_lock.
