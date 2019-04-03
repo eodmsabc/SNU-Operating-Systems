@@ -8,7 +8,7 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
-#include <rotation.h>
+#include <linux/rotation.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
