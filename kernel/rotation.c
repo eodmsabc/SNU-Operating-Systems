@@ -153,6 +153,8 @@ int fill_node(struct rotation_lock *node, int degree, int range)
     return 0;
 }
 
+
+// remove and get rotation_lock from list by using degree, range and current pid. if can't find lock, return NULL
 struct rotation_lock *pop_node(int degree, int range, struct list_head *header)
 {
     struct rotation_lock *curr;
@@ -173,15 +175,259 @@ struct rotation_lock *pop_node(int degree, int range, struct list_head *header)
     return NULL;
 }
 
-int readlock_active(struct rotation_lock rot_lock)
+
+
+
+int attach_node(struct rotation_lock *node, )
+
+
+// if no waiting writer in current rotation, return 1 else return 0.
+int check_no_waiting_writer_in_current_rotation()
+{
+    struct rotation_lock *curr;
+    int curr_range;
+    int curr_degree;
+
+    list_for_each_entry(curr, writer_waiting_list, list)   
+    {
+        curr_degree = curr->degree;
+        curr_range = curr->range;
+
+        if(value_in_area(curr_degree, curr_range, current_lotation))    // waiting writer in current rotation. return 0.
+        {
+            return 0;
+        }
+    }
+
+    return 1;   // no wating writer.
+}
+
+// if reader could get lock at current lock state, return 1 else return 0.
+// if lock state is zero or positive, could get lock.
+int check_reader_range_free(int degree, int range)
+{
+    int i;
+    int deg;
+    for(i = degree - range; i <= degree + range; i++)
+    {
+        deg = DEGREE_ADJUST(i);
+        if(current_lock_state[deg] < 0) return 0;
+    }
+    return 1;
+}
+
+// if writer could get lock at current lock state, return 1 else return 0.
+// if lock state is zero, could get lock
+int check_writer_range_free(int degree, int range)
+{
+    int i;
+    int deg;
+    for(i = degree - range; i <= degree + range; i++)
+    {
+        deg = DEGREE_ADJUST(i);
+        if(current_lock_state[deg] != 0) return 0;
+    }
+    return 1;
+}
+
+// check reader should lock. if reader could get lock, return 1. else reader couldn't get lock, return 0 
+int reader_should_go(struct rotation_lock *rot_lock)
+{
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+    if(value_in_area(degree, range, current_lotation))  // check current rotation in rot_lock's area.
+    {
+        if(check_no_waiting_writer_in_current_rotation() && check_reader_range_free(degree, range))    // check no wating writer in current rotation, and check reader can lock. 
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// check writer should lock. if writer could get lock, return 1. else writer couldn't get lock, return 0 
+int writer_should_go(struct rotation_lock *rot_lock)
+{
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+
+    if(value_in_area(degree, range, current_lotation))  // check current rotation in rot_lock's area.
+    {
+        if(check_writer_range_free(degree, range))    // check writer can lock. 
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+//change current state, and add rotation lock to reader_active_list. if terminate normally, return 0.
+int read_lock_active(struct rotation_lock *rot_lock)
+{
+    int i;
+    int deg;
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+
+    if(range!=180)  // set current state = current state + 1.
+    {
+        for(i = degree - range; i <= degree + range; i++)
+        {
+            deg = DEGREE_ADJUST(i);
+            if(current_lock_state[deg] < 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+                return 1;
+            }
+            current_lock_state[deg]++;
+        }
+    }
+    else
+    {
+        for(i=0; i<360; i++)
+        {
+            if(current_lock_state[i] < 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
+                return 1;
+            }
+            current_lock_state[i]++;
+        }
+    }
+    // setup current state ended.
+
+    list_add(&(rot_lock->list), reader_active_list); //add to reader active list.
+
+    return 0;
+}
+
+//change current state, and add rotation lock to writer_active_list. if terminate normally, return 0.
+int write_lock_active(struct rotation_lock *rot_lock)
+{
+    int i;
+    int deg;
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+
+    if(range!=180)  // set current state = -1.
+    {
+        for(i = degree - range; i <= degree + range; i++)
+        {
+            deg = DEGREE_ADJUST(i);
+            if(current_lock_state[deg] != 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+                return 1;
+            }
+            current_lock_state[deg] = -1;
+        }
+    }
+    else
+    {
+        for(i=0; i<360; i++)
+        {
+            if(current_lock_state[i] != 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
+                return 1;
+            }
+            current_lock_state[i] = -1;
+        }
+    }
+    // setup current state ended.
+
+    list_add(&(rot_lock->list), writer_active_list); //add to writer active list.
+
+    return 0;
+}
+
+
+//change current state. if terminate normally, return 0.
+int read_lock_release(struct rotation_lock *rot_lock)
+{   
+    int i;
+    int deg;
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+
+    if(range!=180)  // set current state = current state + 1.
+    {
+        for(i = degree - range; i <= degree + range; i++)
+        {
+            deg = DEGREE_ADJUST(i);
+            if(current_lock_state[deg] <= 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+                return 1;
+            }
+            current_lock_state[deg]--;
+        }
+    }
+    else
+    {
+        for(i=0; i<360; i++)
+        {
+            if(current_lock_state[i] <= 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
+                return 1;
+            }
+            current_lock_state[i]--;
+        }
+    }
+    // setup current state ended.
+
+    return 0;
+}
+
+//change current state. if terminate normally, return 0.
+int write_lock_release(struct rotation_lock *rot_lock)
+{
+    int i;
+    int deg;
+    int degree = rot_lock->degree;
+    int range = rot_lock->range;
+
+    if(range!=180)  // set current state = -1.
+    {
+        for(i = degree - range; i <= degree + range; i++)
+        {
+            deg = DEGREE_ADJUST(i);
+            if(current_lock_state[deg] >= 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+                return 1;
+            }
+            current_lock_state[deg] = 0;
+        }
+    }
+    else
+    {
+        for(i=0; i<360; i++)
+        {
+            if(current_lock_state[i] >= 0)       // critical error!!!!
+            {
+                printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
+                return 1;
+            }
+            current_lock_state[i] = 0;
+        }
+    }
+    // setup current state ended.
+
+    return 0
+}
+
+void inform_writer_at_current_lotation()
 {
 
 }
 
-int writelock_active()
+void inform_reader_at_current_lotation()
+{
 
-
-int attach_node(struct rotation_lock *node, )
+}
 
 /*
  * sets the current device rotation in the kernel.
@@ -198,8 +444,8 @@ SYSCALL_DEFINE1 (set_rotation, int __user, degree)
     spin_lock_irqsave(&lock, flags); // get lock and disable interrupts
 
     current_lotation = degree;
-    informWriter();
-    informReader();
+    inform_writer_at_current_lotation();
+    inform_reader_at_current_lotation();
 
     spin_unlock_irqrestore(&lock, flags); // disable lock and enable interrupts
     
@@ -248,7 +494,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     spin_lock_irqsave(&lock, flags); // get lock and disable interrupts
     
     list_add(&(rot_lock->list), reader_waiting_list); //add to read waiting list.
-    while(!readerShouldGo())
+    while(!reader_should_go(rot_lock))
     {
         spin_unlock_irqrestore(&lock, flags);
         wait_for_completion(&(rot_lock->comp));
@@ -256,7 +502,13 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     }
     list_del(&(rot_lock->list));   // delete from read waiting list.
 
-    readlock_active(rot_lock);     //add to read active list.
+    retval = read_lock_active(rot_lock);     //change current state, and add rotation lock to reader_active_list
+    if(retval != 0)     
+    {
+        spin_unlock_irqrestore(&lock, flags);
+        printk(KERN_ERR "[PROJ2] read_lock_active has failed.\n");
+        return -EFAULT;
+    }
 
     spin_unlock_irqrestore(&lock, flags);
     return 0;
@@ -265,7 +517,6 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
 SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
 {
     struct rotation_lock *rot_lock;
-    int retval;
 
     if(degree >= 360 || degree < 0)
     {
@@ -297,7 +548,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
 
     spin_lock_irqsave(&lock, flags); // get lock and disable interrupts
     list_add(&(rot_lock->list), writer_waiting_list); //add to write waiting list.
-    while(!writerShouldGo())
+    while(!writer_should_go(rot_lock))
     {
         spin_unlock_irqrestore(&lock, flags);
         wait_for_completion(&(rot_lock->comp));
@@ -305,7 +556,14 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     }
     list_del(&(rot_lock->list));   // delete from writer waiting list.
 
-    readlock_active(rot_lock);     //add to read active list.
+    retval = write_lock_active(rot_lock);   //change current state, and add rotation lock to writer_active_list
+    if(retval != 0)     
+    {
+        spin_unlock_irqrestore(&lock, flags);
+        printk(KERN_ERR "[PROJ2] write_lock_active has failed.\n");
+        return -EFAULT;
+    }
+
     spin_unlock_irqrestore(&lock, flags);
     return 0;
 }
@@ -346,7 +604,7 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         return -EFAULT;
     }
 
-    readlock_release()
+    read_lock_release(rot_lock) //change current state.
     
     if(waiting_writer = iswatingWriter())
     {
@@ -387,7 +645,7 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         return -EFAULT;
     }
     
-    writelock_release()
+    write_lock_release() //change current state.
 
     if(waiting_writer = iswatingWriter())
     {
