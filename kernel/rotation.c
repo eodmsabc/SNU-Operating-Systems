@@ -14,15 +14,8 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 
-#define DEGREE_ADJUST(x) (((x) < 0) ? ((x) + 360) : ((x) % 360))
-// adjust degree to get in 0~359 value.
-#define ABS(x) (((x) < 0) ? (-(x)) : (x))
-
 static DEFINE_MUTEX(my_lock);  // lock initialize
 //unsigned long flags;    // used with spinlock interrupt
-
-
-
 
 //DEFINE_MUTEX(lock);
 
@@ -36,14 +29,14 @@ void mutex_lock(struct mutex *lock);
 void mutex_unlock(struct mutex *lock);
 */
 
-static int current_lotation = 0;    // 0 ~ 359 
-static int current_lock_state[360] = {0,}; 
+static int current_rotation = 0;    // 0 ~ 359
+static int current_lock_state[360] = {0,};
 /* save current lock state of degree.
- * zero value means that lotation is free.
- * negative value (always -1) means that lotation hold write lock.
- * positive value (1,2, ... n) means that lotation hold read lock. value means reader's number.
+ * zero value means that rotation is free.
+ * negative value (always -1) means that rotation hold write lock.
+ * positive value (1,2, ... n) means that rotation hold read lock. value means reader's number.
  *                             ex) [10,30] reader locked, and [20,25] reader locked,
- *                                 current_lock_state[10~19] = 1, [20~25] = 2, [26~30] = 1, other = 0 
+ *                                 current_lock_state[10~19] = 1, [20~25] = 2, [26~30] = 1, other = 0
  */
 
 static LIST_HEAD(writer_waiting_list);
@@ -74,59 +67,15 @@ wake_up (&wq);
 
 
 // check value is in degree and range. true, return 1, else, return 0
-int value_in_area(int degree, int range, int value)
+int check_angle_in_area(int degree, int range, int value)
 {
-    int upper = DEGREE_ADJUST(degree + range);
-    int lower = DEGREE_ADJUST(degree + range);
-
-    if(range == 180) return 1;
-
-    if(upper >= lower)
-    {
-        if(value >= lower && value <= upper) return 1;
-        else return 0;
-    }
-    else
-    {
-        if(value > upper && value < lower) return 0;
-        else return 1;
-    }
+    return ANGLE_DIFF(degree, value) <= range;
 }
 
 // if two range overlap, then return 1, else return 0.
-int two_range_overlap(int degree1, int range1, int degree2, int range2)
+int check_overlap(int degree1, int range1, int degree2, int range2)
 {
-    if(range1 == 180 || range2 == 180) return false;
-    else
-    {
-        int upper1 = DEGREE_ADJUST(degree1 + range1);
-        int lower1 = DEGREE_ADJUST(degree1 - range1);
-
-        int upper2 = DEGREE_ADJUST(degree2 + range2);
-        int lower2 = DEGREE_ADJUST(degree2 - range2);
-
-        if(upper1 >= lower1 && upper2 >= lower2)      //two region doesn't above 360 degree.
-        {
-            if(ABS(degree1 - degree2) > range1 + range2) return 0;
-            else return 1;
-        }
-        else if(upper1 < lower1 && upper2 >= lower2)    // 1st object above 360 degree.
-        {
-            if((upper1 < lower2) && (upper2 < lower1)) return 0;
-            else return 1;
-        }
-        else if(upper1 >= lower1 && upper2 < lower2)    // 2nd object above 360 degree.
-        {
-            if((upper2 < lower1) && (upper1 < lower2)) return 0;
-            else return 1;
-        }
-        else    // two object also above 360 degree.
-        {
-            return 1;
-        }
-        
-    }
-    
+    return ANGLE_DIFF(degree1, degree2) <= (range1 + range2);
 }
 
 
@@ -136,7 +85,7 @@ int rotation_in_area(int degree, int range)
 {
     int ret=0;
     mutex_lock(&my_lock);
-    if(value_in_area(degree, range, current_lotation)) ret = 1;
+    if(check_angle_in_area(degree, range, current_rotation)) ret = 1;
     else ret = 0;
     mutex_unlock(&my_lock);
     return ret;
@@ -146,7 +95,7 @@ int rotation_in_area(int degree, int range)
 int fill_node(struct rotation_lock *node, int degree, int range)
 {
 
-    node->pid = current->pid;   // to find owner, save pid. 
+    node->pid = current->pid;   // to find owner, save pid.
     node->degree = degree;
     node->range = range;
     init_completion(&(node->comp));
@@ -184,12 +133,12 @@ int check_no_waiting_writer_in_current_rotation(void)
     int curr_range;
     int curr_degree;
 
-    list_for_each_entry(curr, &writer_waiting_list, list)   
+    list_for_each_entry(curr, &writer_waiting_list, list)
     {
         curr_degree = curr->degree;
         curr_range = curr->range;
 
-        if(value_in_area(curr_degree, curr_range, current_lotation))    // waiting writer in current rotation. return 0.
+        if(check_angle_in_area(curr_degree, curr_range, current_rotation))    // waiting writer in current rotation. return 0.
         {
             return 0;
         }
@@ -206,7 +155,7 @@ int check_reader_range_free(int degree, int range)
     int deg;
     for(i = degree - range; i <= degree + range; i++)
     {
-        deg = DEGREE_ADJUST(i);
+        deg = ANGLE_ADJUST(i);
         if(current_lock_state[deg] < 0) return 0;
     }
     return 1;
@@ -220,20 +169,20 @@ int check_writer_range_free(int degree, int range)
     int deg;
     for(i = degree - range; i <= degree + range; i++)
     {
-        deg = DEGREE_ADJUST(i);
+        deg = ANGLE_ADJUST(i);
         if(current_lock_state[deg] != 0) return 0;
     }
     return 1;
 }
 
-// check reader should lock. if reader could get lock, return 1. else reader couldn't get lock, return 0 
+// check reader should lock. if reader could get lock, return 1. else reader couldn't get lock, return 0
 int reader_should_go(struct rotation_lock *rot_lock)
 {
     int degree = rot_lock->degree;
     int range = rot_lock->range;
-    if(value_in_area(degree, range, current_lotation))  // check current rotation in rot_lock's area.
+    if(check_angle_in_area(degree, range, current_rotation))  // check current rotation in rot_lock's area.
     {
-        if(check_no_waiting_writer_in_current_rotation() && check_reader_range_free(degree, range))    // check no wating writer in current rotation, and check reader can lock. 
+        if(check_no_waiting_writer_in_current_rotation() && check_reader_range_free(degree, range))    // check no wating writer in current rotation, and check reader can lock.
         {
             return 1;
         }
@@ -241,15 +190,15 @@ int reader_should_go(struct rotation_lock *rot_lock)
     return 0;
 }
 
-// check writer should lock. if writer could get lock, return 1. else writer couldn't get lock, return 0 
+// check writer should lock. if writer could get lock, return 1. else writer couldn't get lock, return 0
 int writer_should_go(struct rotation_lock *rot_lock)
 {
     int degree = rot_lock->degree;
     int range = rot_lock->range;
 
-    if(value_in_area(degree, range, current_lotation))  // check current rotation in rot_lock's area.
+    if(check_angle_in_area(degree, range, current_rotation))  // check current rotation in rot_lock's area.
     {
-        if(check_writer_range_free(degree, range))    // check writer can lock. 
+        if(check_writer_range_free(degree, range))    // check writer can lock.
         {
             return 1;
         }
@@ -270,7 +219,7 @@ int read_lock_active(struct rotation_lock *rot_lock)
     {
         for(i = degree - range; i <= degree + range; i++)
         {
-            deg = DEGREE_ADJUST(i);
+            deg = ANGLE_ADJUST(i);
             if(current_lock_state[deg] < 0)       // critical error!!!!
             {
                 printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
@@ -310,7 +259,7 @@ int write_lock_active(struct rotation_lock *rot_lock)
     {
         for(i = degree - range; i <= degree + range; i++)
         {
-            deg = DEGREE_ADJUST(i);
+            deg = ANGLE_ADJUST(i);
             if(current_lock_state[deg] != 0)       // critical error!!!!
             {
                 printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
@@ -341,7 +290,7 @@ int write_lock_active(struct rotation_lock *rot_lock)
 
 //change current state. if terminate normally, return 0.
 int read_lock_release(struct rotation_lock *rot_lock)
-{   
+{
     int i;
     int deg;
     int degree = rot_lock->degree;
@@ -351,7 +300,7 @@ int read_lock_release(struct rotation_lock *rot_lock)
     {
         for(i = degree - range; i <= degree + range; i++)
         {
-            deg = DEGREE_ADJUST(i);
+            deg = ANGLE_ADJUST(i);
             if(current_lock_state[deg] <= 0)       // critical error!!!!
             {
                 printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
@@ -389,7 +338,7 @@ int write_lock_release(struct rotation_lock *rot_lock)
     {
         for(i = degree - range; i <= degree + range; i++)
         {
-            deg = DEGREE_ADJUST(i);
+            deg = ANGLE_ADJUST(i);
             if(current_lock_state[deg] >= 0)       // critical error!!!!
             {
                 printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
@@ -415,38 +364,38 @@ int write_lock_release(struct rotation_lock *rot_lock)
     return 0;
 }
 
-// inform writers who relevant at current lotation.
-void inform_writer_at_current_lotation(void)
+// inform writers who relevant at current rotation.
+void inform_writer_at_current_rotation(void)
 {
     struct rotation_lock *curr;
     int curr_range;
     int curr_degree;
 
-    list_for_each_entry(curr, &writer_waiting_list, list)   
+    list_for_each_entry(curr, &writer_waiting_list, list)
     {
         curr_degree = curr->degree;
         curr_range = curr->range;
 
-        if(value_in_area(curr_degree, curr_range, current_lotation))    // inform waiting writer in current rotation.
+        if(check_angle_in_area(curr_degree, curr_range, current_rotation))    // inform waiting writer in current rotation.
         {
             complete(&(curr->comp));
         }
     }
 }
 
-// inform readers who relevant at current lotation.
-void inform_reader_at_current_lotation(void)
+// inform readers who relevant at current rotation.
+void inform_reader_at_current_rotation(void)
 {
     struct rotation_lock *curr;
     int curr_range;
     int curr_degree;
 
-    list_for_each_entry(curr, &reader_waiting_list, list)   
+    list_for_each_entry(curr, &reader_waiting_list, list)
     {
         curr_degree = curr->degree;
         curr_range = curr->range;
 
-        if(value_in_area(curr_degree, curr_range, current_lotation))    // inform waiting reader in current rotation.
+        if(check_angle_in_area(curr_degree, curr_range, current_rotation))    // inform waiting reader in current rotation.
         {
             complete(&(curr->comp));
         }
@@ -464,15 +413,15 @@ SYSCALL_DEFINE1 (set_rotation, int __user, degree)
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
         return -EINVAL;
     }
-    
+
     mutex_lock(&my_lock); // get lock and disable interrupts
 
-    current_lotation = degree;
-    inform_writer_at_current_lotation();
-    inform_reader_at_current_lotation();
+    current_rotation = degree;
+    inform_writer_at_current_rotation();
+    inform_reader_at_current_rotation();
 
     mutex_unlock(&my_lock); // disable lock and enable interrupts
-    
+
     return 0;
 }
 
@@ -516,7 +465,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     }
 
     mutex_lock(&my_lock); // get lock and disable interrupts
-    
+
     list_add(&(rot_lock->list), &reader_waiting_list); //add to read waiting list.
     while(!reader_should_go(rot_lock))
     {
@@ -528,7 +477,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     list_del(&(rot_lock->list));   // delete from read waiting list.
 
     retval = read_lock_active(rot_lock);     //change current state, and add rotation lock to reader_active_list
-    if(retval != 0)     
+    if(retval != 0)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] read_lock_active has failed.\n");
@@ -584,7 +533,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     list_del(&(rot_lock->list));   // delete from writer waiting list.
 
     retval = write_lock_active(rot_lock);   //change current state, and add rotation lock to writer_active_list
-    if(retval != 0)     
+    if(retval != 0)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] write_lock_active has failed.\n");
@@ -621,12 +570,10 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         return -EINVAL;
     }
 
-    
-
     mutex_lock(&my_lock);
 
     rot_lock = pop_node(degree, range, &reader_active_list);
-    
+
     if(rot_lock == NULL)
     {
         mutex_unlock(&my_lock);
@@ -635,17 +582,16 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
     }
 
     retval = read_lock_release(rot_lock); //change current state.
-    if(retval != 0)     
+    if(retval != 0)
     {
         mutex_unlock(&my_lock);
         kfree(rot_lock);
         printk(KERN_ERR "[PROJ2] read_lock_release has failed.\n");
         return -EFAULT;
     }
-    
-    inform_writer_at_current_lotation();
+
+    inform_writer_at_current_rotation();
     // no need to inform reader because readers doesn't care reader.
-    
     mutex_unlock(&my_lock);
     kfree(rot_lock); // free rot_lock.
     return 0;
@@ -674,16 +620,16 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
     mutex_lock(&my_lock);
 
     rot_lock = pop_node(degree, range, &writer_active_list);
-    
+
     if(rot_lock == NULL)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] there is no active readlock by this degree and range!\n");
         return -EFAULT;
     }
-    
+
     retval = write_lock_release(rot_lock); //change current state.
-    if(retval != 0)     
+    if(retval != 0)
     {
         mutex_unlock(&my_lock);
         kfree(rot_lock);
@@ -691,9 +637,9 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         return -EFAULT;
     }
 
-    inform_writer_at_current_lotation();
-    inform_reader_at_current_lotation();
-    
+    inform_writer_at_current_rotation();
+    inform_reader_at_current_rotation();
+
     mutex_unlock(&my_lock);
 
     kfree(rot_lock); // free rot_lock.
