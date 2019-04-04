@@ -1,15 +1,15 @@
 CC = arm-linux-gnueabi-gcc
 CFLAGS=-I ../include
-OBJS = rotd.o
-TARGET = rotd
+SRC = $(wildcard *.c)
+OBJS = $(SRC:.c=.o)
+TARGETS = $(SRC:.c=)
+
+
 
 .SUFFIXES : .c .o
 
-all : $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) -o $@ $(OBJS)
+all : $(TARGETS)
 
 clean :
-	rm -f $(TARGET)
+	rm -f $(TARGETS)
 	rm -f *.o
