@@ -8,4 +8,4 @@ struct rotation_lock {
     int range;
     struct completion comp;         // save completion
     struct list_head list;          // list member
-}
+};

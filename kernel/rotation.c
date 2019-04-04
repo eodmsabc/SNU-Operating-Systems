@@ -19,7 +19,7 @@
 #define ABS(x) (((x) < 0) ? (-(x)) : (x))
 
 static DEFINE_MUTEX(my_lock);  // lock initialize
-unsigned long flags;    // used with spinlock interrupt
+//unsigned long flags;    // used with spinlock interrupt
 
 
 
