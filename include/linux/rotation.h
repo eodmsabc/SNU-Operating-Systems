@@ -4,6 +4,9 @@
 #include <linux/completion.h>
 #include <linux/types.h>
 #include <linux/list.h>
+#include <linux/sched.h>
+
+void exit_rotlock(struct task_struct *tsk);
 
 #define ABS(x) (((x) < 0) ? (-(x)) : (x))
 

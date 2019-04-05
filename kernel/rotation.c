@@ -402,6 +402,62 @@ void inform_reader_at_current_rotation(void)
     }
 }
 
+
+void remove_all_writer_lock_from_active_list(pid_t exit_pid)
+{
+    struct rotation_lock *curr, *do_not_use;
+
+    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of write lock released and remove from active list.
+    {
+        if(curr->pid == exit_pid)
+        {
+            list_del(&(curr->list));
+            write_lock_release(curr);
+            kfree(curr);        //do not forget free!
+        }
+    }
+}
+void remove_all_reader_lock_from_active_list(pid_t exit_pid)
+{
+    struct rotation_lock *curr, *do_not_use;
+
+    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of read lock released and remove from active list.
+    {
+        if(curr->pid == exit_pid)
+        {
+            list_del(&(curr->list));
+            read_lock_release(curr);
+            kfree(curr);        //do not forget free!
+        }
+    }
+}
+void remove_all_writer_lock_from_wating_list(pid_t exit_pid)
+{
+    struct rotation_lock *curr, *do_not_use;
+
+    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of write lock released and remove from waiting list.
+    {
+        if(curr->pid == exit_pid)
+        {
+            list_del(&(curr->list));
+            kfree(curr);        //do not forget free!
+        }
+    }
+}
+void remove_all_reader_lock_from_wating_list(pid_t exit_pid)
+{
+    struct rotation_lock *curr, *do_not_use;
+
+    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of read lock released and remove from waiting list.
+    {
+        if(curr->pid == exit_pid)
+        {
+            list_del(&(curr->list));
+            kfree(curr);        //do not forget free!
+        }
+    }
+}
+
 /*
  * sets the current device rotation in the kernel.
  * syscall number 398 (you may want to check this number!)
@@ -554,8 +610,6 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
 SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
 {
     struct rotation_lock *rot_lock;
-    struct rotation_lock *waiting_writer;
-    struct rotation_lock *waiting_reader;
     int retval;
 
     if(degree >= 360 || degree < 0)
@@ -601,8 +655,6 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
 {
 
     struct rotation_lock *rot_lock;
-    struct rotation_lock *waiting_writer;
-    struct rotation_lock *waiting_reader;
     int retval;
 
     if(degree >= 360 || degree < 0)
@@ -644,4 +696,20 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
 
     kfree(rot_lock); // free rot_lock.
     return 0;
+}
+
+void exit_rotlock(struct task_struct *tsk)
+{
+    pid_t exit_pid = tsk->pid;
+
+    mutex_lock(&my_lock);
+
+    remove_all_writer_lock_from_active_list(pid);
+    remove_all_reader_lock_from_active_list(pid);
+    
+    remove_all_writer_lock_from_wating_list(pid);
+    remove_all_reader_lock_from_wating_list(pid);
+
+    mutex_unlock(&my_lock);
+
 }
