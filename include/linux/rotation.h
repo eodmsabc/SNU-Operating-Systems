@@ -11,7 +11,7 @@
 #define ANGLE_ADJUST(x) (((x) < 0) ? ((x) + 360) : ((x) % 360))
 
 // Get difference from two angle
-#define ANGLE_DIFF(x, y) (180 - ABS(180 - ABS(x - y)))
+#define ANGLE_DIFF(x, y) (180 - ABS(180 - ABS((x) - (y))))
 
 struct rotation_lock {
     pid_t pid;  // save lock's caller's pid.
