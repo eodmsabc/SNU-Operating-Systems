@@ -407,7 +407,7 @@ void remove_all_writer_lock_from_active_list(pid_t exit_pid)
 {
     struct rotation_lock *curr, *do_not_use;
 
-    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of write lock released and remove from active list.
+    list_for_each_entry_safe(curr, do_not_use, &writer_active_list, list)   // all of write lock released and remove from active list.
     {
         if(curr->pid == exit_pid)
         {
@@ -421,7 +421,7 @@ void remove_all_reader_lock_from_active_list(pid_t exit_pid)
 {
     struct rotation_lock *curr, *do_not_use;
 
-    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of read lock released and remove from active list.
+    list_for_each_entry_safe(curr, do_not_use, &reader_active_list, list)   // all of read lock released and remove from active list.
     {
         if(curr->pid == exit_pid)
         {
@@ -435,7 +435,7 @@ void remove_all_writer_lock_from_wating_list(pid_t exit_pid)
 {
     struct rotation_lock *curr, *do_not_use;
 
-    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of write lock released and remove from waiting list.
+    list_for_each_entry_safe(curr, do_not_use, &writer_waiting_list, list)   // all of write lock released and remove from waiting list.
     {
         if(curr->pid == exit_pid)
         {
@@ -448,7 +448,7 @@ void remove_all_reader_lock_from_wating_list(pid_t exit_pid)
 {
     struct rotation_lock *curr, *do_not_use;
 
-    list_for_each_entry_safe(curr, do_not_use, header, list)   // all of read lock released and remove from waiting list.
+    list_for_each_entry_safe(curr, do_not_use, &reader_waiting_list, list)   // all of read lock released and remove from waiting list.
     {
         if(curr->pid == exit_pid)
         {
@@ -704,11 +704,11 @@ void exit_rotlock(struct task_struct *tsk)
 
     mutex_lock(&my_lock);
 
-    remove_all_writer_lock_from_active_list(pid);
-    remove_all_reader_lock_from_active_list(pid);
+    remove_all_writer_lock_from_active_list(exit_pid);
+    remove_all_reader_lock_from_active_list(exit_pid);
     
-    remove_all_writer_lock_from_wating_list(pid);
-    remove_all_reader_lock_from_wating_list(pid);
+    remove_all_writer_lock_from_wating_list(exit_pid);
+    remove_all_reader_lock_from_wating_list(exit_pid);
 
     mutex_unlock(&my_lock);
 
