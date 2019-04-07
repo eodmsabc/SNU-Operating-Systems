@@ -1,5 +1,9 @@
 #include <stdio.h>
-#include <sys/syscall.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#define SYSCALL_ROTLOCK_WRITE 400
+#define SYSCALL_ROTUNLOCK_WRITE 402
 
 int main(int argc, char** argv)
 {
@@ -17,7 +21,7 @@ int main(int argc, char** argv)
     input = atoi(argv[1]);
 
     while (1) {
-        if (rotlock_write(90, 90))
+        if (syscall(SYSCALL_ROTLOCK_WRITE, 90, 90))
         {
             fprintf(stderr, "selector: Failed to request write lock.\n");
             return 1;
@@ -29,7 +33,7 @@ int main(int argc, char** argv)
 
         printf("selector: %d\n", input++);
 
-        if (rotunlock_write(90, 90))
+        if (syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90))
         {
             fprintf(stderr, "selector: Failed to release write lock.\n");
             return 1;

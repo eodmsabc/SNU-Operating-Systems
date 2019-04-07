@@ -1,6 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
+
+#define SYSCALL_ROTLOCK_READ 399
+#define SYSCALL_ROTUNLOCK_READ 401
 
 int file_exist (char *filename)
 {
@@ -41,7 +45,7 @@ int main(int argc, char** argv)
     id = atoi(argv[1]);
 
     while (1) {
-        if (rotlock_read(90, 90))
+        if (syscall(SYSCALL_ROTLOCK_READ, 90, 90))
         {
             fprintf(stderr, "trial-%d: Failed to request read lock.\n", id);
             return 1;
@@ -56,7 +60,7 @@ int main(int argc, char** argv)
             prime_factorization(id, num);
         }
 
-        if (rotunlock_read(90, 90))
+        if (syscall(SYSCALL_ROTUNLOCK_READ, 90, 90))
         {
             fprintf(stderr, "trial-%d: Failed to release read lock.\n", id);
             return 1;
