@@ -1,5 +1,6 @@
 #include <stdio.h>
-#include <linux/rotation.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 
 int file_exist (char *filename)
 {
