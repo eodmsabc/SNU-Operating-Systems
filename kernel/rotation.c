@@ -676,7 +676,7 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
     if(rot_lock == NULL)
     {
         mutex_unlock(&my_lock);
-        printk(KERN_ERR "[PROJ2] there is no active readlock by this degree and range!\n");
+        printk(KERN_ERR "[PROJ2] there is no active writelock by this degree and range!\n");
         return -EFAULT;
     }
 

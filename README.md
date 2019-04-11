@@ -18,6 +18,15 @@ $ ./kernelbootflash.sh <SD card device node>
 * *단순 편의 목적의 스크립트이므로 이 커널을 빌드할 때 필수적으로 요구되는 요소는 아니다.*
 
 
+##### how to build test code
+
+/test 폴더에 테스트 코드 빌드를 위한 Makefile을 만들어 두었다.
+
+```bash
+$ make
+```
+를 통해 rotd, selector, trial 테스트 프로그램을 빌드할 수 있고, make clean을 통해 만들어진 프로그램을 정리할 수 있다.
+
 
 
 ## Project Overview & Goals
@@ -65,7 +74,7 @@ rotunlock_write : 받아온 write rotation lock을 해제한다.
 작동 로직으로 보면 크게 lock을 거는 part와 lock을 해제하는 part로 나뉘어져 있으며, 
 rotation lock의 전체 구조는 다음과 같이 나뉘어진다.
 
-`
+```
 struct rotation_lock {
     pid_t pid;  // save lock's caller's pid.
     int degree;
@@ -73,7 +82,7 @@ struct rotation_lock {
     struct completion comp;         // save completion
     struct list_head list;          // list member
 }
-`
+```
 
 또한 이 lock을 관리하기 위한 global data는 다음과 같다.
 
@@ -120,7 +129,7 @@ global data
 
 lock 요청을 할때, 다음 loop를 돌면서 락을 할당할지, 말지를 결정한다.
 
-`
+```
 while(!reader_should_go(rot_lock))
     {
         mutex_unlock(&my_lock);
@@ -128,7 +137,7 @@ while(!reader_should_go(rot_lock))
         mutex_lock(&my_lock);
         reinit_completion(&(rot_lock->comp)); // if wake up, completion need to reinitiating because completion has memory of complete(). multiple complete, multiple no-wait.
     }
-`
+```
 
 락 요청마다 우리가 구현한 rotation_lock 구조체를 생성한다. rotation_lock 구조체는 내부에 락을 요청한 프로세스의 정보, 락의 정보와 리눅스 lock structure중 하나인 completion을 원소로 가지게 된다.
 
@@ -141,6 +150,44 @@ completion은 wait queue의 단순화된 버전인데, wait_for_completion(&comp
 여러번 complete 요청을 받고 쓸데없이 계속 일어나는것을 막기 위해 reinit_completion을 통해 반복되는 wakeup을 없애주었다.
 
 completion을 기다리는 문장이 while loop 내부에 들어있으므로, 설사 false-wakeup이 일어나더라도 safety를 보장하게 하였다.
+
+##### unlocking our lock
+
+락을 풀어줄때는 현재 대기하고 있는 락 요청중 어떤 락 요청을 진행시킬지를 정해야 한다.
+
+우리 구현의 핵심만 뽑으면 다음과 같다. writer lock 해제할때의 예시이다.
+
+```
+    mutex_lock(&my_lock);
+
+    rot_lock = pop_node(degree, range, &writer_active_list);
+
+    retval = write_lock_release(rot_lock); //change current state.
+
+    inform_writer_at_current_rotation();
+    inform_reader_at_current_rotation();
+
+    mutex_unlock(&my_lock);
+```
+
+현재 active writer lock list에서 요청받은 lock을 제거하고, writer lock을 풀어준다. (write_lock_release)
+그리고 나서, 대기하고 있는 writer와 reader들에게 락이 해제되었음을 알려준다.
+
+
+1. writer lock이 해제된경우, 현재 대기하고 있는 다른 writer lock이나 reader lock이 새로 할당될 수 있다.
+이때, 각 lock은 현재 rotation과 락이 요청한 범위가 맞아야하고, writer lock과 reader lock의 경우
+자신이 할당될 수 있는지 현재 상태를 체크하는 과정이 필요한데, 앞에서 락 요청을 구현할때 while loop에
+락 요청마다 현재 이 락 요청이 진행할 수 있는지 없는지를 체크하게 해놓았다.
+때문에 굳이 락을 풀어줄때 어떤 락 요청이 진행할 수 있을지 검사를 다시 할 필요가 없다고 생각하여,
+락이 진행할 수 있는 최소한의 조건만 만족하면 해당되는 락 요청들을 wakeup 하게 하였다.
+
+따라서 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 reader, writer 락 요청들을 모두 wakeup 하게 구현하였다.
+
+2. reader lock이 해제된경우, reader lock의 경우는 다른 reader lock과 lock region을 공유할 수 있기 때문에, reader lock이 해제되었다고 해서 지금까지 할당되지 못했던 reader lock 요청이 진행되는 경우는 존재하지 않는다.
+
+따라서 writer lock이 해제될때와 같이, 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 writer 락 요청들만 모두 wakeup 하게 구현하였다.
+
+
 
 
 
@@ -169,13 +216,6 @@ writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우�
 
 
 
-##### 
-
-
-작성중
-
-
-
 ## Test Results 
 
 
@@ -184,5 +224,9 @@ writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우�
 
 
 
-* 
-*
+* 커널에서 lock이 어떻게 동작하는지 파악할 수 있었다.
+* lock을 실제로 구현하면서, 좋은 디자인 패턴이 정말 중요함을 느꼈다. 교과서에 있는 구현패턴을 보지 않았으면 락을 구현하는데 굉장히 오래 걸렸을 것이다.
+* lock을 구현할때, safety와 performance를 둘다 만족하게 구현하는것이 까다로운 일임을 깨달았다.
+* simple is best라는것을 다시한번 느끼게 되었다. 특히 락같이 여러 오브젝트를 고려해야 하는 경우에는 전체 그림을 그리기가 까다로워서, 간편하고 범용적인 구현에서 조금씩 구체화 해가는 식으로 락을 구현하였다.
+
+* OS 프로젝트를 진행할때는 빠른 시작이 중요함을 뼈저리게 느낄 수 있었다. 데드라인에 닥쳐서 구현을 시작했으면 정말 큰일날 뻔했다.
