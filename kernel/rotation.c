@@ -467,7 +467,7 @@ SYSCALL_DEFINE1 (set_rotation, int __user, degree)
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     mutex_lock(&my_lock); // get lock and disable interrupts
@@ -495,13 +495,13 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     if(range > 180 || range < 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     rot_lock = (struct rotation_lock *) kmalloc(sizeof(struct rotation_lock), GFP_KERNEL);
@@ -509,7 +509,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     if (!rot_lock) {
         printk(KERN_ERR
                 "[PROJ2] kmalloc for new item in read lock has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     retval = fill_node(rot_lock, degree, range);
@@ -517,7 +517,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     {
         printk(KERN_ERR
                 "[PROJ2] filling node has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     mutex_lock(&my_lock); // get lock and disable interrupts
@@ -537,7 +537,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] read_lock_active has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     mutex_unlock(&my_lock);
@@ -552,13 +552,13 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     if(range > 180 || range < 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     rot_lock = (struct rotation_lock *) kmalloc(sizeof(struct rotation_lock), GFP_KERNEL);
@@ -566,7 +566,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     if (!rot_lock) {
         printk(KERN_ERR
                 "[PROJ2] kmalloc for new item in read lock has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     retval = fill_node(rot_lock, degree, range);
@@ -574,7 +574,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     {
         printk(KERN_ERR
                 "[PROJ2] filling node has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     mutex_lock(&my_lock); // get lock and disable interrupts
@@ -593,7 +593,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] write_lock_active has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     mutex_unlock(&my_lock);
@@ -615,13 +615,13 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     if(range > 180 || range < 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     mutex_lock(&my_lock);
@@ -632,7 +632,7 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] there is no active readlock by this degree and range!\n");
-        return -EFAULT;
+        return -1;
     }
 
     retval = read_lock_release(rot_lock); //change current state.
@@ -641,7 +641,7 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         mutex_unlock(&my_lock);
         kfree(rot_lock);
         printk(KERN_ERR "[PROJ2] read_lock_release has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     inform_writer_at_current_rotation();
@@ -660,13 +660,13 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     if(range > 180 || range < 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
-        return -EINVAL;
+        return -1;
     }
 
     mutex_lock(&my_lock);
@@ -677,7 +677,7 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
     {
         mutex_unlock(&my_lock);
         printk(KERN_ERR "[PROJ2] there is no active writelock by this degree and range!\n");
-        return -EFAULT;
+        return -1;
     }
 
     retval = write_lock_release(rot_lock); //change current state.
@@ -686,7 +686,7 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         mutex_unlock(&my_lock);
         kfree(rot_lock);
         printk(KERN_ERR "[PROJ2] write_lock_release has failed.\n");
-        return -EFAULT;
+        return -1;
     }
 
     inform_writer_at_current_rotation();
