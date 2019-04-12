@@ -218,6 +218,88 @@ writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우�
 
 ## Test Results 
 
+rotd와 selector를 실행한 상태에서 trial 0, 1, 2, 3까지 4개를 사용하였다.
+
+그 결과중 일부분을 가져왔다.
+```
+selector: 5328
+trial-1: 5328 = 2 * 2 * 2 * 2 * 3 * 3 * 37
+trial-0: 5328 = 2 * 2 * 2 * 2 * 3 * 3 * 37
+selector: 5329
+trial-0: 5329 = 73 * 73
+trial-1: 5329 = 73 * 73
+selector: 5330
+trial-1: 5330 = 2 * 5 * 13 * 41
+trial-0: 5330 = 2 * 5 * 13 * 41
+selector: 5331
+trial-0: 5331 = 3 * 1777
+trial-1: 5331 = 3 * 1777
+trial-2: 5331 = 3 * 1777
+selector: 5332
+trial-1: 5332 = 2 * 2 * 31 * 43
+trial-2: 5332 = 2 * 2 * 31 * 43
+selector: 5333
+trial-1: 5333 = 5333
+trial-2: 5333 = 5333
+selector: 5334
+trial-1: 5334 = 2 * 3 * 7 * 127
+trial-2: 5334 = 2 * 3 * 7 * 127
+selector: 5335
+trial-1: 5335 = 5 * 11 * 97
+trial-2: 5335 = 5 * 11 * 97
+selector: 5336
+trial-2: 5336 = 2 * 2 * 2 * 23 * 29
+selector: 5337
+trial-2: 5337 = 3 * 3 * 593
+trial-1: 5337 = 3 * 3 * 593
+selector: 5338
+trial-1: 5338 = 2 * 17 * 157
+trial-2: 5338 = 2 * 17 * 157
+selector: 5339
+trial-2: 5339 = 19 * 281
+trial-1: 5339 = 19 * 281
+selector: 5340
+trial-1: 5340 = 2 * 2 * 3 * 5 * 89
+trial-2: 5340 = 2 * 2 * 3 * 5 * 89
+selector: 5341
+trial-1: 5341 = 7 * 7 * 109
+trial-2: 5341 = 7 * 7 * 109
+selector: 5342
+trial-1: 5342 = 2 * 2671
+trial-2: 5342 = 2 * 2671
+selector: 5343
+trial-1: 5343 = 3 * 13 * 137
+trial-2: 5343 = 3 * 13 * 137
+selector: 5344
+trial-2: 5344 = 2 * 2 * 2 * 2 * 2 * 167
+trial-1: 5344 = 2 * 2 * 2 * 2 * 2 * 167
+selector: 5345
+trial-1: 5345 = 5 * 1069
+trial-2: 5345 = 5 * 1069
+selector: 5346
+trial-2: 5346 = 2 * 3 * 3 * 3 * 3 * 3 * 11
+trial-1: 5346 = 2 * 3 * 3 * 3 * 3 * 3 * 11
+selector: 5347
+trial-1: 5347 = 5347
+trial-2: 5347 = 5347
+selector: 5348
+trial-2: 5348 = 2 * 2 * 7 * 191
+trial-1: 5348 = 2 * 2 * 7 * 191
+selector: 5349
+trial-1: 5349 = 3 * 1783
+selector: 5350
+trial-2: 5350 = 2 * 5 * 5 * 107
+trial-1: 5350 = 2 * 5 * 5 * 107
+selector: 5351
+trial-2: 5351 = 5351
+trial-1: 5351 = 5351
+selector: 5352
+trial-1: 5352 = 2 * 2 * 2 * 3 * 223
+trial-2: 5352 = 2 * 2 * 2 * 3 * 223
+....
+```
+
+
 
 
 ## Lessons Learned
