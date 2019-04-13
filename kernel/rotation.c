@@ -215,31 +215,17 @@ int read_lock_active(struct rotation_lock *rot_lock)
     int degree = rot_lock->degree;
     int range = rot_lock->range;
 
-    if(range!=180)  // set current state = current state + 1.
+    for(i = degree - range; i <= degree + range; i++) // set current state = current state + 1.
     {
-        for(i = degree - range; i <= degree + range; i++)
+        deg = ANGLE_ADJUST(i);
+        if(current_lock_state[deg] < 0)       // critical error!!!!
         {
-            deg = ANGLE_ADJUST(i);
-            if(current_lock_state[deg] < 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
-                return 1;
-            }
-            current_lock_state[deg]++;
+            printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+            return 1;
         }
+        current_lock_state[deg]++;
     }
-    else
-    {
-        for(i=0; i<360; i++)
-        {
-            if(current_lock_state[i] < 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in read_lock_active, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
-                return 1;
-            }
-            current_lock_state[i]++;
-        }
-    }
+
     // setup current state ended.
 
     list_add(&(rot_lock->list), &reader_active_list); //add to reader active list.
@@ -255,31 +241,17 @@ int write_lock_active(struct rotation_lock *rot_lock)
     int degree = rot_lock->degree;
     int range = rot_lock->range;
 
-    if(range!=180)  // set current state = -1.
+    for(i = degree - range; i <= degree + range; i++) // set current state = -1.
     {
-        for(i = degree - range; i <= degree + range; i++)
+        deg = ANGLE_ADJUST(i);
+        if(current_lock_state[deg] != 0)       // critical error!!!!
         {
-            deg = ANGLE_ADJUST(i);
-            if(current_lock_state[deg] != 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
-                return 1;
-            }
-            current_lock_state[deg] = -1;
+            printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+            return 1;
         }
+        current_lock_state[deg] = -1;
     }
-    else
-    {
-        for(i=0; i<360; i++)
-        {
-            if(current_lock_state[i] != 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in write_lock_active, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
-                return 1;
-            }
-            current_lock_state[i] = -1;
-        }
-    }
+
     // setup current state ended.
 
     list_add(&(rot_lock->list), &writer_active_list); //add to writer active list.
@@ -296,31 +268,17 @@ int read_lock_release(struct rotation_lock *rot_lock)
     int degree = rot_lock->degree;
     int range = rot_lock->range;
 
-    if(range!=180)  // set current state = current state + 1.
+    for(i = degree - range; i <= degree + range; i++) // set current state = current state + 1.
     {
-        for(i = degree - range; i <= degree + range; i++)
+        deg = ANGLE_ADJUST(i);
+        if(current_lock_state[deg] <= 0)       // critical error!!!!
         {
-            deg = ANGLE_ADJUST(i);
-            if(current_lock_state[deg] <= 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
-                return 1;
-            }
-            current_lock_state[deg]--;
+            printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+            return 1;
         }
+        current_lock_state[deg]--;
     }
-    else
-    {
-        for(i=0; i<360; i++)
-        {
-            if(current_lock_state[i] <= 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in read_lock_release, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
-                return 1;
-            }
-            current_lock_state[i]--;
-        }
-    }
+    
     // setup current state ended.
 
     return 0;
@@ -334,31 +292,17 @@ int write_lock_release(struct rotation_lock *rot_lock)
     int degree = rot_lock->degree;
     int range = rot_lock->range;
 
-    if(range!=180)  // set current state = -1.
+    for(i = degree - range; i <= degree + range; i++) // set current state = -1.
     {
-        for(i = degree - range; i <= degree + range; i++)
+        deg = ANGLE_ADJUST(i);
+        if(current_lock_state[deg] >= 0)       // critical error!!!!
         {
-            deg = ANGLE_ADJUST(i);
-            if(current_lock_state[deg] >= 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
-                return 1;
-            }
-            current_lock_state[deg] = 0;
+            printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! deg = %d, state = %d\n", deg, current_lock_state[deg]);
+            return 1;
         }
+        current_lock_state[deg] = 0;
     }
-    else
-    {
-        for(i=0; i<360; i++)
-        {
-            if(current_lock_state[i] >= 0)       // critical error!!!!
-            {
-                printk(KERN_ERR "[PROJ2] in write_lock_release, current state of lock is corrupted!! i = %d, state = %d\n", i, current_lock_state[i]);
-                return 1;
-            }
-            current_lock_state[i] = 0;
-        }
-    }
+    
     // setup current state ended.
 
     return 0;
@@ -498,7 +442,7 @@ SYSCALL_DEFINE2 (rotlock_read, int __user, degree, int __user, range)
         return -1;
     }
 
-    if(range > 180 || range < 0)
+    if(range >= 180 || range <= 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
         return -1;
@@ -555,7 +499,7 @@ SYSCALL_DEFINE2 (rotlock_write, int __user, degree, int __user, range)
         return -1;
     }
 
-    if(range > 180 || range < 0)
+    if(range >= 180 || range <= 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
         return -1;
@@ -618,7 +562,7 @@ SYSCALL_DEFINE2 (rotunlock_read, int __user, degree, int __user, range)
         return -1;
     }
 
-    if(range > 180 || range < 0)
+    if(range >= 180 || range <= 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
         return -1;
@@ -663,7 +607,7 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
         return -1;
     }
 
-    if(range > 180 || range < 0)
+    if(range >= 180 || range <= 0)
     {
         printk(KERN_ERR "[PROJ2] range is not correct value.\n");
         return -1;
