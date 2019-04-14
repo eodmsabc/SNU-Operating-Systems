@@ -37,6 +37,7 @@ $ make
 
 
 set_rotation : 새 rotation값을 받아서, 커널 내부에 저장되어있는 rotation 값을 새 rotation값으로 바꿔준다.
+set_rotation이 깨우는 프로세스의 개수를 리턴한다.
 
 rotlock_read : 커널로부터 read rotation lock을 받아온다.
 
@@ -115,8 +116,7 @@ global data
 프로세스가 종료하는 경우
 1. active list에서 그 프로세스가 요청했던 lock들을 모두 찾아 해제하고, list에서 제거한다.
 2. waiting list에서 그 프로세스가 요청했던 lock들을 list에서 제거한다.
-
-
+3. 대기중인 프로세스를 깨워서 종료된 프로세스에 의해 release된 lock을 잡을 기회를 부여한다.
 
 
 

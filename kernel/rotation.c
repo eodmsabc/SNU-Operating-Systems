@@ -347,8 +347,9 @@ void inform_reader_at_current_rotation(void)
 }
 
 
-void remove_all_writer_lock_from_active_list(pid_t exit_pid)
+int remove_all_writer_lock_from_active_list(pid_t exit_pid)
 {
+    int retval = 0;
     struct rotation_lock *curr, *do_not_use;
 
     list_for_each_entry_safe(curr, do_not_use, &writer_active_list, list)   // all of write lock released and remove from active list.
@@ -358,11 +359,14 @@ void remove_all_writer_lock_from_active_list(pid_t exit_pid)
             list_del(&(curr->list));
             write_lock_release(curr);
             kfree(curr);        //do not forget free!
+            retval++;
         }
     }
+    return retval;
 }
-void remove_all_reader_lock_from_active_list(pid_t exit_pid)
+int remove_all_reader_lock_from_active_list(pid_t exit_pid)
 {
+    int retval = 0;
     struct rotation_lock *curr, *do_not_use;
 
     list_for_each_entry_safe(curr, do_not_use, &reader_active_list, list)   // all of read lock released and remove from active list.
@@ -372,8 +376,10 @@ void remove_all_reader_lock_from_active_list(pid_t exit_pid)
             list_del(&(curr->list));
             read_lock_release(curr);
             kfree(curr);        //do not forget free!
+            retval++;
         }
     }
+    return retval;
 }
 void remove_all_writer_lock_from_wating_list(pid_t exit_pid)
 {
@@ -666,18 +672,22 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
 
 void exit_rotlock(struct task_struct *tsk)
 {
+    int active_count = 0;
     pid_t exit_pid = tsk->pid;
 
     mutex_lock(&my_lock);
 
-    remove_all_writer_lock_from_active_list(exit_pid);
-    remove_all_reader_lock_from_active_list(exit_pid);
+    active_count += remove_all_writer_lock_from_active_list(exit_pid);
+    active_count += remove_all_reader_lock_from_active_list(exit_pid);
     
     remove_all_writer_lock_from_wating_list(exit_pid);
     remove_all_reader_lock_from_wating_list(exit_pid);
 
-    inform_writer_at_current_rotation();
-    inform_reader_at_current_rotation();
+    if (active_count > 0)
+    {
+        inform_writer_at_current_rotation();
+        inform_reader_at_current_rotation();
+    }
 
     mutex_unlock(&my_lock);
 }
