@@ -676,6 +676,8 @@ void exit_rotlock(struct task_struct *tsk)
     remove_all_writer_lock_from_wating_list(exit_pid);
     remove_all_reader_lock_from_wating_list(exit_pid);
 
-    mutex_unlock(&my_lock);
+    inform_writer_at_current_rotation();
+    inform_reader_at_current_rotation();
 
+    mutex_unlock(&my_lock);
 }
