@@ -1,18 +1,24 @@
-Linux kernel
-============
+<b>OS PROJECT 2</b>
 
-This file was moved to Documentation/admin-guide/README.rst
 
-Please notice that there are several guides for kernel developers and users.
-These guides can be rendered in a number of formats, like HTML and PDF.
+현재 
+/arch/arm/tools/syscall.tbl
+/arch/arm64/include/asm/unistd.h
+/arch/arm64/include/asm/unistd32.h
+/kernel/Makefile
 
-In order to build the documentation, use ``make htmldocs`` or
-``make pdfdocs``.
+수정해서
+398 common  set_rotation    sys_set_rotation
+399 common  rotlock_read    sys_rotlock_read
+400 common  rotlock_write   sys_rotlock_write
+401 common  rotunlock_read  sys_rotunlock_read
+402 common  rotunlock_write sys_rotunlock_write
 
-There are various text files in the Documentation/ subdirectory,
-several of them using the Restructured Text markup notation.
-See Documentation/00-INDEX for a list of what is contained in each file.
+콜들 추가해놓은 상태.
 
-Please read the Documentation/process/changes.rst file, as it contains the
-requirements for building and running the kernel, and information about
-the problems which may result by upgrading your kernel.
+
+시스템 콜 구현을 위해
+
+/kernel/rotation_lock.c 추가했고, 이 파일에다 시스콜 구현하면 됨.(Makefile에 dependency는 추가함)
+
+
