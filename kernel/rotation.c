@@ -347,8 +347,9 @@ void inform_reader_at_current_rotation(void)
 }
 
 
-void remove_all_writer_lock_from_active_list(pid_t exit_pid)
+int remove_all_writer_lock_from_active_list(pid_t exit_pid)
 {
+    int retval = 0;
     struct rotation_lock *curr, *do_not_use;
 
     list_for_each_entry_safe(curr, do_not_use, &writer_active_list, list)   // all of write lock released and remove from active list.
@@ -358,11 +359,14 @@ void remove_all_writer_lock_from_active_list(pid_t exit_pid)
             list_del(&(curr->list));
             write_lock_release(curr);
             kfree(curr);        //do not forget free!
+            retval++;
         }
     }
+    return retval;
 }
-void remove_all_reader_lock_from_active_list(pid_t exit_pid)
+int remove_all_reader_lock_from_active_list(pid_t exit_pid)
 {
+    int retval = 0;
     struct rotation_lock *curr, *do_not_use;
 
     list_for_each_entry_safe(curr, do_not_use, &reader_active_list, list)   // all of read lock released and remove from active list.
@@ -372,8 +376,10 @@ void remove_all_reader_lock_from_active_list(pid_t exit_pid)
             list_del(&(curr->list));
             read_lock_release(curr);
             kfree(curr);        //do not forget free!
+            retval++;
         }
     }
+    return retval;
 }
 void remove_all_writer_lock_from_wating_list(pid_t exit_pid)
 {
@@ -408,6 +414,9 @@ void remove_all_reader_lock_from_wating_list(pid_t exit_pid)
  */
 SYSCALL_DEFINE1 (set_rotation, int __user, degree)
 {
+    struct rotation_lock *curr;
+    int retval = 0;
+
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
@@ -420,9 +429,28 @@ SYSCALL_DEFINE1 (set_rotation, int __user, degree)
     inform_writer_at_current_rotation();
     inform_reader_at_current_rotation();
 
+    list_for_each_entry(curr, &writer_waiting_list, list)
+    {
+        if (writer_should_go(curr))
+        {
+            retval = 1;
+            break;
+        }
+    }
+    if (!retval)
+    {
+        list_for_each_entry(curr, &reader_waiting_list, list)
+        {
+            if (reader_should_go(curr))
+            {
+                retval++;
+            }
+        }
+    }
+
     mutex_unlock(&my_lock); // disable lock and enable interrupts
 
-    return 0;
+    return retval;
 }
 
 /*
@@ -644,16 +672,22 @@ SYSCALL_DEFINE2 (rotunlock_write, int __user, degree, int __user, range)
 
 void exit_rotlock(struct task_struct *tsk)
 {
+    int active_count = 0;
     pid_t exit_pid = tsk->pid;
 
     mutex_lock(&my_lock);
 
-    remove_all_writer_lock_from_active_list(exit_pid);
-    remove_all_reader_lock_from_active_list(exit_pid);
+    active_count += remove_all_writer_lock_from_active_list(exit_pid);
+    active_count += remove_all_reader_lock_from_active_list(exit_pid);
     
     remove_all_writer_lock_from_wating_list(exit_pid);
     remove_all_reader_lock_from_wating_list(exit_pid);
 
-    mutex_unlock(&my_lock);
+    if (active_count > 0)
+    {
+        inform_writer_at_current_rotation();
+        inform_reader_at_current_rotation();
+    }
 
+    mutex_unlock(&my_lock);
 }
