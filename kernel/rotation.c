@@ -408,6 +408,9 @@ void remove_all_reader_lock_from_wating_list(pid_t exit_pid)
  */
 SYSCALL_DEFINE1 (set_rotation, int __user, degree)
 {
+    struct rotation_lock *curr;
+    int retval = 0;
+
     if(degree >= 360 || degree < 0)
     {
         printk(KERN_ERR "[PROJ2] degree is not correct value.\n");
@@ -420,9 +423,28 @@ SYSCALL_DEFINE1 (set_rotation, int __user, degree)
     inform_writer_at_current_rotation();
     inform_reader_at_current_rotation();
 
+    list_for_each_entry(curr, &writer_waiting_list, list)
+    {
+        if (writer_should_go(curr))
+        {
+            retval = 1;
+            break;
+        }
+    }
+    if (!retval)
+    {
+        list_for_each_entry(curr, &reader_waiting_list, list)
+        {
+            if (reader_should_go(curr))
+            {
+                retval++;
+            }
+        }
+    }
+
     mutex_unlock(&my_lock); // disable lock and enable interrupts
 
-    return 0;
+    return retval;
 }
 
 /*
