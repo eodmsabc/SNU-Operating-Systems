@@ -4,7 +4,7 @@
 
 const struct sched_class wrr_sched_class = {
 
-    .next               = &fair_sched_class, // not in rt.c
+    .next               = &fair_sched_class,
     .enqueue_task       = enqueue_task_wrr,
     .dequeue_task       = dequeue_task_wrr,
     .yield_task         = yield_task_wrr,
@@ -21,7 +21,7 @@ const struct sched_class wrr_sched_class = {
 
 #ifdef CONFIG_SMP
     .select_task_rq   = select_task_rq_wrr,
-    .set_cpus_allowed = set_cpus_allowed_common, // not in rt.c
+    .set_cpus_allowed = set_cpus_allowed_common,
     .rq_online        = rq_online_wrr,
     .rq_offline       = rq_offline_wrr,
     .task_woken       = task_woken_wrr,
@@ -84,11 +84,35 @@ get_rr_interval_wrr(struct rq *rq, struct task_struct *task)
 
 static void update_curr_wrr(struct rq *rq)
 {
+    struct task_struct *curr = rq->curr;
+    struct sched_wrr_entity *wrr_entity = &curr->wrr;
+    
+    if(curr->sched_class != &wrr_sched_class) {
+        return
+    }
+
+    /* maybe update weight here?? */
 }
 
 static void
 check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int flags)
 {
+}
+
+/* scheduler_tick callback function */
+/* called by timer. */
+static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
+{
+    struct sched_wrr_entity *wrr_se = &p->wrr;
+
+	update_curr_wrr(rq);
+
+    if(p->policy != SCHED_WRR) {
+        return;
+    }
+
+    /* requeue it? */
+
 }
 
 

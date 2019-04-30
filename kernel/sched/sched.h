@@ -5,6 +5,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/sched/topology.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/wrr.h>
 #include <linux/sched/deadline.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/wake_q.h>
@@ -270,6 +271,7 @@ extern bool dl_cpu_busy(unsigned int cpu);
 
 struct cfs_rq;
 struct rt_rq;
+struct wrr_rq;
 
 extern struct list_head task_groups;
 
@@ -600,6 +602,12 @@ struct dl_rq {
 
 #ifdef CONFIG_SMP
 
+/* wrr rq */
+struct wrr_rq {
+    // TODO
+    struct rq *rq;
+};
+
 static inline bool sched_asym_prefer(int a, int b)
 {
 	return arch_asym_cpu_priority(a) > arch_asym_cpu_priority(b);
@@ -706,6 +714,7 @@ struct rq {
 	u64 nr_switches;
 
 	struct cfs_rq cfs;
+    struct wrr_rq wrr;
 	struct rt_rq rt;
 	struct dl_rq dl;
 
@@ -1496,6 +1505,7 @@ extern const struct sched_class dl_sched_class;
 extern const struct sched_class rt_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
+extern const struct sched_class wrr_sched_class;
 
 
 #ifdef CONFIG_SMP
