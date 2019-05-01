@@ -536,7 +536,10 @@ struct sched_dl_entity {
 
 /* wrr entity. see other entities */
 struct sched_wrr_entity {
-    // TODO
+	struct list_head		run_list;
+    struct list_head        weight_list;
+	unsigned int			time_slice;
+	unsigned int			weight;
 };
 
 union rcu_special {

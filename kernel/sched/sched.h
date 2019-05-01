@@ -600,13 +600,23 @@ struct dl_rq {
 	u64 bw_ratio;
 };
 
-#ifdef CONFIG_SMP
-
 /* wrr rq */
 struct wrr_rq {
-    // TODO
-    struct rq *rq;
+    struct list_head queue;
+    struct list_head weight_array[WRR_MAXWEIGHT + 1];
+
+    unsigned int usable;
+
+    unsigned int weight_sum;
+    unsigned int min_weight;
+    unsigned int max_weight;
+
+    unsigned int count;
+
+	raw_spinlock_t wrr_runtime_lock;
 };
+
+#ifdef CONFIG_SMP
 
 static inline bool sched_asym_prefer(int a, int b)
 {
