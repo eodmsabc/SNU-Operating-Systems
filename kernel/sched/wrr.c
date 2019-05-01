@@ -118,6 +118,15 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
 
 #ifdef CONFIG_SMP
 
+void trigger_load_balance_wrr(struct rq *rq)
+{
+    /* check if 2000ms passed */
+    /* check if this rq has unbalanced highest weight */
+    /* check if other rq has unbalanced lowest weight */
+    /* check if this rq has suitable task for migration */
+    /* then lock both queue and migrate suitable task */
+}
+
 static int
 select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 {
