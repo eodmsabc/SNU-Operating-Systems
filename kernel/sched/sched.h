@@ -605,13 +605,13 @@ struct wrr_rq {
     struct list_head queue;
     struct list_head weight_array[WRR_MAXWEIGHT + 1];
 
-    unsigned int usable;
+    int usable;
 
-    unsigned int weight_sum;
-    unsigned int min_weight;
-    unsigned int max_weight;
+    int weight_sum;
+    int min_weight;
+    int max_weight;
 
-    unsigned int count;
+    int count;
 
 	raw_spinlock_t wrr_runtime_lock;
 };
