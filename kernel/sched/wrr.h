@@ -6,7 +6,7 @@
 struct task_struct;
 
 #define WRR_TIMESLICE 1 //TODO
-#define WRR_MINWEIGHT 20
+#define WRR_MINWEIGHT 1
 #define WRR_MAXWEIGHT 20
 
 #endif  /* _LINUX_SCHED_WRR_H */
