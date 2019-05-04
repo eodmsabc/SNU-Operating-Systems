@@ -4,9 +4,12 @@
 #include "sched.h"
 
 #include <linux/irq_work.h>
+#include <linux/sched.h>
 
 #define lowest_rq(polar_value) (polar_value & (int) 65535);
 #define highest_rq(polar_value) (polar_value >> 16);
+
+struct task_struct
 
 const struct sched_class wrr_sched_class = {
 
@@ -98,16 +101,12 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct wrr_rq *wrr_rq = &rq->wrr_rq;
     struct sched_wrr_entity *wrr_se = &p->wrr;
     int weight = wrr_se->weight;
-    
+
+
     list_add(&wrr_se->weight_list, &wrr_rq->weight_array[weight]);
     list_add_tail(&wrr_se->run_list, &wrr_rq->queue);
 
     wrr_rq->weight_sum += weight;
-
-    if(++wrr_rq->count == 1) {
-        wrr_rq->min_weight = wrr_rq->max_weight = weight;
-        return;
-    }
 
     update_minmax_weight_wrr(*wrr_rq, weight)
 }
@@ -126,11 +125,6 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_del(&wrr_se->run_list);
 
     wrr_rq->weight_sum -= weight;
-
-    if(--wrr_rq->count == 0) {
-        wrr_rq->min_weight = WRR_MAXWEIGHT;
-        wrr_rq->max_weight = WRR_MINWEIGHT;
-    }
 
     update_minmax_weight_wrr(*wrr_rq, weight)
 }
