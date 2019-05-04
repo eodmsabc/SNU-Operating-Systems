@@ -109,7 +109,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
         return;
     }
 
-    update_minmax_weight_wrr(*wrr_rq, weight)
+    update_minmax_weight_wrr(wrr_rq, weight)
 }
 
 static void
@@ -132,7 +132,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
         wrr_rq->max_weight = WRR_MINWEIGHT;
     }
 
-    update_minmax_weight_wrr(*wrr_rq, weight)
+    update_minmax_weight_wrr(wrr_rq, weight)
 }
 
 /* need to update entity AFTER requeue */

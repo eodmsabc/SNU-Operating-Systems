@@ -541,6 +541,7 @@ struct sched_wrr_entity {
     struct task_struct *task;
 	int	time_slice;
 	int weight;
+    int new_weight;
 };
 
 union rcu_special {
