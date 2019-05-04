@@ -58,23 +58,47 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 }
 
 static void
-update_minmax_weight_wrr(struct wrr_rq *wrr_rq, int weight)
+update_minmax_weight_insert_wrr(struct wrr_rq *wrr_rq, int weight)
 {
-    if(wrr_rq->min_weight <= weight && weight <= wrr_rq->max_weight) {
+    if (wrr_rq->min_weight <= weight && weight <= wrr_rq->max_weight)
         return;
+
+    if (weight < wrr_rq->min_weight)
+    {
+        wrr_rq->min_weight = weight;
     }
 
-    if(weight < wrr_rq->min_weight) {
-        for(i = weight; i <= wrr_rq->max_weight; i++) {
-            if(!list_empty(w_arr[i])) {
+    if (weight > wrr_rq->max_weight)
+    {
+        wrr_rq->max_weight = weight;
+    }
+}
+
+static void
+update_minmax_weight_delete_wrr(struct wrr_rq *wrr_rq, int weight)
+{
+    int i;
+
+    if (wrr_rq->count == 0) {
+        wrr_rq->min_weight = WRR_MAXWEIGHT;
+        wrr_rq->max_weight = WRR_MINWEIGHT;
+        return;
+    }
+    
+    if (wrr_rq->min_weight < weight && weight < wrr_rq->max_weight)
+        return;
+
+    if (wrr_rq->min_weight == weight) {
+        for (i = weight; i <= WRR_MAXWEIGHT; i++) {
+            if (!list_empty(w_arr[i])) {
                 wrr_rq->min_weight = i;
                 return;
             }
         }
     }
-    else {
-        for(i = weight; i >= wrr_rq->min_weight; i--) {
-            if(!list_empty(w_arr[i])) {
+    else if (wrr_rq->max_weight == weight) {
+        for (i = weight; i >= WRR_MINWEIGHT; i--) {
+            if (!list_empty(w_arr[i])) {
                 wrr_rq->max_weight = i;
                 return;
             }
@@ -104,12 +128,9 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     wrr_rq->weight_sum += weight;
 
-    if(++wrr_rq->count == 1) {
-        wrr_rq->min_weight = wrr_rq->max_weight = weight;
-        return;
-    }
+    wrr_rq->count++;
 
-    update_minmax_weight_wrr(wrr_rq, weight)
+    update_minmax_weight_insert_wrr(wrr_rq, weight);
 }
 
 static void
@@ -127,12 +148,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     wrr_rq->weight_sum -= weight;
 
-    if(--wrr_rq->count == 0) {
-        wrr_rq->min_weight = WRR_MAXWEIGHT;
-        wrr_rq->max_weight = WRR_MINWEIGHT;
-    }
-
-    update_minmax_weight_wrr(wrr_rq, weight)
+    update_minmax_weight_delete_wrr(wrr_rq, weight);
 }
 
 /* need to update entity AFTER requeue */
@@ -142,19 +158,21 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p);
     /* todo - locking and many other things */
     struct wrr_rq *wrr_rq = &rq->wrr_rq;
     struct sched_wrr_entity *wrr_se = &p->wrr;
+    int old_weight = wrr_se->weight;
     int new_weight = wrr_se->new_weight;
 
     list_move_tail(&wrr_se->run_list, &wrr_rq->queue);
 
-    if(new_weight == wrr_se->weight) {
+    if(old_weight == new_weight) {
         return;
     }
 
     list_move_tail(&wrr_se->weight_list, &wrr_rq->weight_array[new_weight]);
 
-    wrr_rq->weight_sum += new_weight - wrr_se->weight;
+    wrr_rq->weight_sum += new_weight - old_weight;
 
-    update_minmax_weight_wrr(wrr_rq, new_weight);
+    update_minmax_weight_delete_wrr(wrr_rq, old_weight);
+    update_minmax_weight_insert_wrr(wrr_rq, new_weight);
 }
 
 static void yield_task_wrr(struct rq *rq)

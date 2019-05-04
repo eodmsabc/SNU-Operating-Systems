@@ -2243,7 +2243,7 @@ void set_numabalancing_state(bool enabled)
 }
 
 #ifdef CONFIG_PROC_SYSCTL
-int sysctl_numa_balancing(struct ctl_table *table, int write,
+int sysctl_numa_balancing(struct ctl_table *table, int crite,
 			 void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table t;
@@ -6758,3 +6758,116 @@ const u32 sched_prio_to_wmult[40] = {
  /*  10 */  39045157,  49367440,  61356676,  76695844,  95443717,
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
+
+
+/**
+ * sys_sched_setweight - set/change the process's wrr weight
+ * @pid: the pid in question.
+ * @weight: new weight.
+ *
+ * Return 0 on success. An error code otherwise.
+ */
+SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
+{
+    struct task_struct *p;
+    struct sched_wrr_entity *wrr_se;
+    int uid, euid, tuid, teuid;
+    bool is_owner = false, is_root = false, granted = false;
+    int policy, old_weight;
+    int retval;
+    
+    if (pid < 0 || weight < WRR_MINWEIGHT || weight > WRR_MAXWEIGHT)
+        return -EINVAL;
+
+    /* get task_struct */
+    retval = -ESRCH;
+    rcu_read_lock();
+    p = find_process_by_pid(pid);
+
+    if (p) {
+        retval = security_task_getscheduler(p);
+
+        if (!retval) {
+            policy = p->policy;
+
+            retval = -EINVAL;
+            if (policy == SCHED_WRR) {
+
+                uid = getuid();
+                euid = geteuid();
+                tuid = task_uid(p);
+                teuid = task_euid(p);
+
+                // TODO check privileges, not sure
+                is_root = (euid == 0);
+                is_owner = (euid == teuid);
+                
+                old_weight = p->wrr.weight;
+                wrr_se = &p->wrr;
+
+                retval = -EPERM;
+                if (is_root) {
+                    granted = true;
+                }
+                else if (is_owner) {
+                    if (weight <= old_weight) {
+                        granted = true;
+                    }
+                }
+
+                if (granted) {
+                    wrr_se -> new_weight = weight;
+                    retval = 0;
+                }
+            }
+        }
+        else {
+            // security_task_getscheduler(p) failed
+            // if it works wrong way, security function should be deleted.
+        }
+    }
+
+    rcu_read_unlock();
+    return retval;
+}
+
+/**
+ * sys_sched_getweight - get the process's wrr weight
+ * @pid: the pid in question.
+ * 
+ * Return the weight of requested process. -1 on error
+ */
+SYSCALL_DEFINE1(sched_getweight, pid_t, pid)
+{
+    struct task_struct *p;
+    int policy, retval;
+
+    if (pid < 0)
+        return -EINVAL;
+
+    /* get task_struct */
+    retval = -ESRCH;
+    rcu_read_lock();
+    p = find_process_by_pid(pid);
+
+    if(p) {
+        retval = security_task_getscheduler(p);
+        
+        if (!retval) {
+            policy = p->policy;
+
+            if (policy == SCHED_WRR) {
+                retval = p->wrr.weight;
+            }
+            else {
+                retval = -EINVAL;
+            }
+        }
+        else {
+            // security_task_getscheduler(p) failed
+            // if it works wrong way, security function should be deleted.
+        }
+    }
+    rcu_read_unlock();
+    return retval;
+}
