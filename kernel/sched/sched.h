@@ -604,7 +604,7 @@ struct dl_rq {
 struct wrr_rq {
     struct list_head queue;
     struct list_head weight_array[WRR_MAXWEIGHT + 1];
-    struct task_struct *curr_task;
+    struct task_struct *curr;
 
     int usable; // if this value is zero, cpu doesn't use wrr_scheduling.
 

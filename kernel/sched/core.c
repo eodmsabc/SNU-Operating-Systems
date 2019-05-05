@@ -6767,7 +6767,7 @@ const u32 sched_prio_to_wmult[40] = {
  *
  * Return 0 on success. An error code otherwise.
  */
-SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
+SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)       
 {
     struct task_struct *p;
     struct sched_wrr_entity *wrr_se;
