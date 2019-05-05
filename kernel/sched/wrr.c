@@ -67,6 +67,7 @@ static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_s
 	return container_of(wrr_se, struct task_struct, wrr);
 }
 
+
 /* this function update wrr queue. modifies count, weight sum, min and max weight.
  when insert item. need locking. */
 static void
@@ -120,12 +121,32 @@ update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
     // set weight. if list is all empty, then set initial value.
 }
 
-
-static void update_task_wrr(struct task_struct *p)
+/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
+static void update_task_weight_wrr(struct rq *rq, struct task_struct *p)
 {
-    struct sched_wrr_entity *wrr_se = &p->wrr;
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+    int old_weight;
+    int new_weight;
+
+    wrr_rq = &(rq->wrr_rq);
+
+    wrr_se = &(p->wrr);
+    old_weight = wrr_se->weight;
+    new_weight = wrr_se->new_weight;
+
+    if(old_weight == new_weight) {  // no need to update wrr_entity.        
+        return;
+    }
+
     wrr_se->weight = wrr_se->new_weight;
     wrr_se->timeslice = wrr_se->weight * WRR_TIMESLICE;
+
+    list_move_tail(&(wrr_se->weight_list), &(wrr_rq->weight_array[new_weight]));
+
+    wrr_rq->weight_sum += new_weight - old_weight;
+
+    update_minmax_weight_wrr(wrr_rq);
 }
 
 /* enqueue, dequeue, requeue */
@@ -203,7 +224,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 static void
 requeue_task_wrr(struct rq *rq, struct task_struct *p);
 {
-    /* todo - locking and many other things */
+    /* todo - many other things */
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
     int old_weight;
@@ -213,33 +234,23 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_se = &(p->wrr);
-    old_weight = wrr_se->weight;
-    new_weight = wrr_se->new_weight;
 
-    list_move_tail(&wrr_se->run_list, &wrr_rq->queue);
+    list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
-    if(old_weight == new_weight) {
-        return;
-    }
+    update_task_wrr(rq, p);
 
-    list_move_tail(&wrr_se->weight_list, &wrr_rq->weight_array[new_weight]);
-
-    wrr_rq->weight_sum += new_weight - old_weight;
-
-    update_minmax_weight_delete_wrr(wrr_rq, old_weight);
-    update_minmax_weight_insert_wrr(wrr_rq, new_weight);
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
 static void yield_task_wrr(struct rq *rq)
 {
     requeue_task_wrr(rq, rq->curr);
-    update_task_wrr(rq->curr);
 }
 
 static struct task_struct *
 pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-    struct wrr_rq *wrr_rq = &rq->wrr;
+    struct wrr_rq *wrr_rq = &(rq->wrr);
     if(list_empty(wrr_rq->queue)) {
         return NULL;
     }
@@ -292,7 +303,6 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     }
 
     requeue_task_wrr(rq, p);
-    update_task_wrr(p);
 
     resched_curr(rq);
 }
