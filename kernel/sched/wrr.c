@@ -121,7 +121,8 @@ update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
     // set weight. if list is all empty, then set initial value.
 }
 
-/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
+/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. 
+   beware, this function modify time slice of task!  */
 static void update_task_weight_wrr(struct rq *rq, struct task_struct *p)
 {
     struct wrr_rq *wrr_rq;
@@ -268,6 +269,17 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
     // TODO
     // populate p->wrr (which is entity)
     // assign task to laziest cpu
+    struct sched_wrr_entity *wrr_entity;
+    wrr_entity = &(p->wrr);
+
+    if(p == NULL) return;
+    if(p->policy != SCHED_WRR) return;
+    if (list_empty(&(p->wrr.run_list))) return;
+
+    wrr_entity->weight = 10;
+    wrr_entity->new_weight = 10;
+    wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+
 }
 
 static void
@@ -294,17 +306,45 @@ check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int flags)
 /* called by timer. */
 static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
 {
-    /* TODO */
-    struct wrr_rq *wrr_rq = &rq->wrr_rq;
-    struct sched_wrr_entity *wrr_se = &p->wrr;
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_entity;
+    struct list_head *wrr_rq_queue;
+    struct list_head *wrr_rq_weight_arr;
+    struct list_head *wrr_entity_run_list;
+    struct list_head *wrr_entity_weight_list;
 
-    if(--p->wrr.time_slice) {
+    wrr_rq = &(rq->wrr_rq);
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
+    if(p == NULL)   // if task_struct don't accessible..
+    {
+        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+        return;
+    }
+    else if(p->policy != SCHED_WRR) // policy is not SCHED_WRR, don't need to do job.
+    {
+        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
     }
 
-    requeue_task_wrr(rq, p);
+    wrr_entity = &(p->wrr);
+    wrr_entity_run_list = wrr_entity->run_list;
 
-    resched_curr(rq);
+    if(--(p->wrr.time_slice))  // if current task time_slice is not zero.. don't need to re_schedule.
+    {
+        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+        return;
+    }
+    else
+    {
+        requeue_task_wrr(rq, p);
+        resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
+        // should we use set_tsk_need_resched(p)?
+    }
+
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+    return;
+    
 }
 
 /*
@@ -315,7 +355,13 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
  */
 static void task_fork_wrr(struct task_struct *p)
 {
-    // TODO
+    if (p == NULL) return;
+
+    p->wrr.weight = p->real_parent->wrr.weight;
+    p->wrr.new_weight = p->real_parent->wrr.new_weight;
+    p->wrr.time_slice = p->wrr.weight * WRR_TIMESLICE;
+
+    return;
 }
 
 static void find_polar_rq()
