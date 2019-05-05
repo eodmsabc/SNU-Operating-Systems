@@ -9,6 +9,8 @@
 #define lowest_rq(polar_value) (polar_value & (int) 65535);
 #define highest_rq(polar_value) (polar_value >> 16);
 
+#define WEIGHT_INITIALVALUE -1
+
 struct task_struct
 
 const struct sched_class wrr_sched_class = {
@@ -45,45 +47,57 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     int i;
 
     INIT_LIST_HEAD(&wrr_rq->queue);
-
+    
     for(i = WRR_MINWEIGHT; i <= WRR_MAXWEIGHT; i++) {
         INIT_LIST_HEAD(&wrr_rq->weight_array[i]);
     }
     
     wrr_rq->count = 0;
     wrr_rq->weight_sum = 0;
-    wrr_rq->min_weight = WRR_MAXWEIGHT;
-    wrr_rq->max_weight = WRR_MINWEIGHT;
+    wrr_rq->min_weight = WEIGHT_INITIALVALUE;
+    wrr_rq->max_weight = WEIGHT_INITIALVALUE;
+    wrr_rq->curr_task = NULL;
 
-    wrr_rq->usable = 1;
-
+    /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
+    wrr_rq->usable = 1;    
+    
     raw_spin_lock_init(&wrr_rq->wrr_runtime_lock);
+
 }
 
+
+/* this function update max&min weight of wrr queue. need locking. */
 static void
-update_minmax_weight_wrr(struct wrr_rq *wrr_rq, int weight)
+update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
 {
-    if(wrr_rq->min_weight <= weight && weight <= wrr_rq->max_weight) {
-        return;
-    }
+    int min_weight = WEIGHT_INITIALVALUE;
+    int max_weight = WEIGHT_INITIALVALUE;
 
-    if(weight < wrr_rq->min_weight) {
-        for(i = weight; i <= wrr_rq->max_weight; i++) {
-            if(!list_empty(w_arr[i])) {
-                wrr_rq->min_weight = i;
-                return;
-            }
+    for(i = WRR_MINWEIGHT; i <= WRR_MAXWEIGHT; i++) 
+    {
+        if(!list_empty(w_arr[i])) 
+        {
+            min_weight = i;
+            break;
+        }
+    }      
+    // find min_weight
+
+    for(i = WRR_MAXWEIGHT; i >= WRR_MINWEIGHT; i--) 
+    {
+        if(!list_empty(w_arr[i])) 
+        {
+            max_weight = i;
+            break;
         }
     }
-    else {
-        for(i = weight; i >= wrr_rq->min_weight; i--) {
-            if(!list_empty(w_arr[i])) {
-                wrr_rq->max_weight = i;
-                return;
-            }
-        }
-    }
+    // find max_weight
+
+    wrr_rq->min_weight = min_weight;
+    wrr_rq->max_weight = max_weight;
+    // set weight. if list is all empty, then set initial value.
 }
+
 
 static void update_task_wrr(struct task_struct *p)
 {
@@ -98,17 +112,32 @@ static void
 enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 {
     /* todo - locking?? */ 
-    struct wrr_rq *wrr_rq = &rq->wrr_rq;
-    struct sched_wrr_entity *wrr_se = &p->wrr;
-    int weight = wrr_se->weight;
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+    int weight;
+    
+    wrr_rq = &(rq->wrr_rq);
+    wrr_se = &(p->wrr);
+    weight = wrr_se->weight;
 
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
-    list_add(&wrr_se->weight_list, &wrr_rq->weight_array[weight]);
-    list_add_tail(&wrr_se->run_list, &wrr_rq->queue);
+    if(wrr_rq->curr_task == NULL)
+    {
+        wrr_rq -> curr_task = p;
+        
+    }
+    
+    list_add(&(wrr_se->weight_list), &(wrr_rq->weight_array[weight]));
+    list_add_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
     wrr_rq->weight_sum += weight;
 
-    update_minmax_weight_wrr(*wrr_rq, weight)
+    
+    
+    update_minmax_weight_wrr(*wrr_rq, weight);
+    
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock))
 }
 
 static void
