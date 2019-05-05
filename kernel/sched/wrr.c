@@ -54,7 +54,6 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     wrr_rq->weight_sum = 0;
     wrr_rq->min_weight = WEIGHT_INITIALVALUE;
     wrr_rq->max_weight = WEIGHT_INITIALVALUE;
-    wrr_rq->curr = NULL;
 
     /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
     wrr_rq->usable = 1;    
@@ -143,10 +142,10 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     int weight;
     
     wrr_rq = &(rq->wrr_rq);
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
     wrr_entity = &(p->wrr);
     weight = wrr_entity->weight;
-
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_rq_weight_arr = &(wrr_rq->weight_array[weight]);
@@ -154,31 +153,16 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_entity_weight_list = &(wrr_entity->weight_list);
     // list values initialize.
 
-    if(wrr_rq->curr == NULL)    // if current job is null..
-    {
-        wrr_rq -> curr = p;
-        list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-        list_add(wrr_entity_weight_list, wrr_rq_weight_arr);
-    }
-    else
-    {
-        struct sched_wrr_entity *curr_entity;
-        struct list_head *curr_entity_run_list;
 
-        curr_entity = &(wrr_rq->curr->wrr);
-        curr_entity_run_list = (curr_entity->run_list);
-
-        list_add_tail(wrr_entity_run_list, curr_entity_run_list);
-        list_add(wrr_entity_weight_list, wrr_rq_weight_arr);
-    }
+    list_add_tail(wrr_entity_run_list, wrr_rq_queue);
+    list_add(wrr_entity_weight_list, wrr_rq_weight_arr);
     // add wrr_entity to runqueue & weightqueue.
 
-    wrr_entity->time_slice = 0;     // time slice initialize.
     p->on_rq = 1;
 
     update_insert_wrr(*wrr_rq, weight);
     
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock))
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
 static void
@@ -190,46 +174,29 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_rq_weight_arr;
     struct list_head *wrr_entity_run_list;
     struct list_head *wrr_entity_weight_list;
-    struct list_head *wrr_entity_run_list_next_of_dequeued_entity;
     int weight;
     
     wrr_rq = &(rq->wrr_rq);
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
     wrr_entity = &(p->wrr);
     weight = wrr_entity->weight;
-
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_rq_weight_arr = &(wrr_rq->weight_array[weight]);
     wrr_entity_run_list = &(wrr_entity->run_list);
     wrr_entity_weight_list = &(wrr_entity->weight_list);
 
-    wrr_entity_run_list_next_of_dequeued_entity = wrr_entity_run_list->next;
     // list values initialize.
 
     list_del_init(wrr_entity_run_list);
     list_del_init(wrr_entity_weight_list);
 
-    // if runqueue is empty, curr should be null..
-    if(list_empty(wrr_rq_queue))
-    {
-        wrr_rq->curr = NULL;
-    }
-    else if(p == wrr_rq->curr)  //else, if current task dequeued..
-    {
-        if(wrr_entity_run_list_next_of_dequeued_entity == wrr_rq_queue)// if current task is end of queue..
-        {
-            wrr_entity_run_list_next_of_dequeued_entity = wrr_entity_run_list_next_of_dequeued_entity->next;
-        }
-        
-        wrr_rq->curr = get_task_of_wrr_entity(list_entry(next_list, struct sched_wrr_entity, run_list));
-    }
-
     p->on_rq = 0;
 
     update_delete_wrr(*wrr_rq, weight);
     
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock))
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
 /* need to update entity AFTER requeue */
@@ -237,9 +204,17 @@ static void
 requeue_task_wrr(struct rq *rq, struct task_struct *p);
 {
     /* todo - locking and many other things */
-    struct wrr_rq *wrr_rq = &(rq->wrr_rq);
-    struct sched_wrr_entity *wrr_se = &(p->wrr);
-    int old_weight = wrr_se->weight;
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+    int old_weight;
+    int new_weight;
+
+    wrr_rq = &(rq->wrr_rq);
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
+    wrr_se = &(p->wrr);
+    old_weight = wrr_se->weight;
+    new_weight = wrr_se->new_weight;
 
     list_move_tail(&wrr_se->run_list, &wrr_rq->queue);
 
