@@ -165,19 +165,21 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p);
     /* todo - locking and many other things */
     struct wrr_rq *wrr_rq = &rq->wrr_rq;
     struct sched_wrr_entity *wrr_se = &p->wrr;
+    int old_weight = wrr_se->weight;
     int new_weight = wrr_se->new_weight;
 
     list_move_tail(&wrr_se->run_list, &wrr_rq->queue);
 
-    if(new_weight == wrr_se->weight) {
+    if(old_weight == new_weight) {
         return;
     }
 
     list_move_tail(&wrr_se->weight_list, &wrr_rq->weight_array[new_weight]);
 
-    wrr_rq->weight_sum += new_weight - wrr_se->weight;
+    wrr_rq->weight_sum += new_weight - old_weight;
 
-    update_minmax_weight_wrr(wrr_rq, new_weight);
+    update_minmax_weight_delete_wrr(wrr_rq, old_weight);
+    update_minmax_weight_insert_wrr(wrr_rq, new_weight);
 }
 
 static void yield_task_wrr(struct rq *rq)
