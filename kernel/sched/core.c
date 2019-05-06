@@ -2388,8 +2388,10 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		put_cpu();
 		return -EAGAIN;
 	} else if (rt_prio(p->prio)) {
-		p->sched_class = &rt_sched_class;
-	} else {
+		p->sched_class = &rt_sched_class;       /* TODO add wrr */
+	} else if (p->policy == SCHED_WRR) {
+        p->sched_class = &wrr_sched_class;
+    } else {
 		p->sched_class = &fair_sched_class;
 	}
 
@@ -3748,7 +3750,8 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 			p->dl.dl_boosted = 0;
 		if (rt_prio(oldprio))
 			p->rt.timeout = 0;
-		p->sched_class = &fair_sched_class;
+        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
+		else p->sched_class = &fair_sched_class;
 	}
 
 	p->prio = prio;
@@ -3978,15 +3981,18 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	 * Keep a potential priority boosting if called from
 	 * sched_setscheduler().
 	 */
+
 	p->prio = normal_prio(p);
 	if (keep_boost)
 		p->prio = rt_effective_prio(p, p->prio);
 
-	if (dl_prio(p->prio))
+    if (dl_prio(p->prio))
 		p->sched_class = &dl_sched_class;
-	else if (rt_prio(p->prio))
+	else if (rt_prio(p->prio))      // TODO add wrr
 		p->sched_class = &rt_sched_class;
-	else
+	else if (p->policy == SCHED_WRR)
+        p->sched_class = &wrr_sched_class;
+	else 
 		p->sched_class = &fair_sched_class;
 }
 
@@ -4006,6 +4012,8 @@ static bool check_same_owner(struct task_struct *p)
 	return match;
 }
 
+
+/* TODO add wrr */
 static int __sched_setscheduler(struct task_struct *p,
 				const struct sched_attr *attr,
 				bool user, bool pi)

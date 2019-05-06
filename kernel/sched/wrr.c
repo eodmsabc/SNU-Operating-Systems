@@ -1,6 +1,14 @@
 /* implement TODO marked methods. */
 /* the rest is probably not needed */
 
+//cfs load balancing 보면 runqueue에 락잡는 함수가 있음
+//load balancing 구현시 for_each_online_cpu
+//cpumask_test_cpu() -> 옮길수 있는 cpu에서 이 태스크가 돌아갈 수 있는가?
+//task_current() -> 지금 돌고있는 task 판단
+//실제 task를 옮길때 deactvie_task  set_task -> activate_task()
+// __acquires() <- 락 잡는것들..
+// load balance 관련된 로직은 wrr.c에 집어넣고, tick에서 구현하도록 하자
+
 #include "sched.h"
 
 #include <linux/irq_work.h>
@@ -136,6 +144,12 @@ void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
     wrr_se = &(p->wrr);
     wrr_rq = &(wrr_se->wrr_runqueue);
 
+    if(wrr_rq == NULL)
+    {
+        printk(KERN_ALERT" wrr_se doesn't have runqueue! \n");
+        return;
+    }
+
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     update_task_weight_wrr(wrr_rq, p, new_weight);
@@ -195,9 +209,9 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_add(wrr_entity_weight_list, wrr_rq_weight_arr);
     // add wrr_entity to runqueue & weightqueue.
 
-    p->on_rq = 1;
-
     update_insert_wrr(*wrr_rq, weight);
+
+    wrr_entity->wrr_runqueue = wrr_rq;      // set entity's runqueue to this wrr_runqueue.
     
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
@@ -229,9 +243,9 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_del_init(wrr_entity_run_list);
     list_del_init(wrr_entity_weight_list);
 
-    p->on_rq = 0;
-
     update_delete_wrr(*wrr_rq, weight);
+
+    wrr_entity->wrr_runqueue = NULL;      // set entity's runqueue to NULL.
     
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
@@ -342,6 +356,8 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     wrr_entity = &(p->wrr);
     wrr_entity_run_list = wrr_entity->run_list;
 
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+
     if(--(p->wrr.time_slice))  // if current task time_slice is not zero.. don't need to re_schedule.
     {
         raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
@@ -353,8 +369,6 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         // should we use set_tsk_need_resched(p)?
     }
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
     return;
 }
 
