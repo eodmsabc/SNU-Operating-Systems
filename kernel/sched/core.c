@@ -6816,7 +6816,8 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
                 }
 
                 if (granted) {
-                    wrr_se -> new_weight = weight;
+                    update_task_weight_wrr_by_task(p, weight);
+                    //wrr_se -> new_weight = weight;
                     retval = 0;
                 }
             }

@@ -9,7 +9,6 @@
 #define lowest_rq(polar_value) (polar_value & (int) 65535);
 #define highest_rq(polar_value) (polar_value >> 16);
 
-#define WEIGHT_INITIALVALUE -1
 
 const struct sched_class wrr_sched_class = {
 
@@ -67,6 +66,10 @@ static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_s
 	return container_of(wrr_se, struct task_struct, wrr);
 }
 
+static wrr_rq *get_runqueue_of_wrr_entity(struct sched_wrr_entity *wrr_se)
+{
+    return wrr_se->wrr_runqueue;
+}
 
 /* this function update wrr queue. modifies count, weight sum, min and max weight.
  when insert item. need locking. */
@@ -121,27 +124,57 @@ update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
     // set weight. if list is all empty, then set initial value.
 }
 
-/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. 
-   beware, this function modify time slice of task!  */
-static void update_task_weight_wrr(struct rq *rq, struct task_struct *p)
+
+/* this function update new_weight to weight, and change wrr_rq's structure by then. */
+void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
 {
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
     int old_weight;
-    int new_weight;
+
+    wrr_se = &(p->wrr);
+    wrr_rq = &(wrr_se->wrr_runqueue);
+
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
+    update_task_weight_wrr()
+    old_weight = wrr_se->weight;
+
+    if(old_weight == new_weight) {  // no need to update wrr_entity.        
+        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+        return;
+    }
+
+    wrr_se->weight = new_weight;
+
+    list_move_tail(&(wrr_se->weight_list), &(wrr_rq->weight_array[new_weight]));
+
+    wrr_rq->weight_sum += new_weight - old_weight;
+
+    update_minmax_weight_wrr(wrr_rq);
+
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+}
+
+
+
+/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
+static void update_task_weight_wrr(struct rq *rq, struct task_struct *p, int new_weight)
+{
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+    int old_weight;
 
     wrr_rq = &(rq->wrr_rq);
 
     wrr_se = &(p->wrr);
     old_weight = wrr_se->weight;
-    new_weight = wrr_se->new_weight;
 
     if(old_weight == new_weight) {  // no need to update wrr_entity.        
         return;
     }
 
-    wrr_se->weight = wrr_se->new_weight;
-    wrr_se->timeslice = wrr_se->weight * WRR_TIMESLICE;
+    wrr_se->weight = new_weight;
 
     list_move_tail(&(wrr_se->weight_list), &(wrr_rq->weight_array[new_weight]));
 
@@ -228,8 +261,6 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p);
     /* todo - many other things */
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
-    int old_weight;
-    int new_weight;
 
     wrr_rq = &(rq->wrr_rq);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
@@ -238,7 +269,7 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p);
 
     list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
-    update_task_wrr(rq, p);
+    wrr_se->timeslice = wrr_se->weight * WRR_TIMESLICE;
 
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
@@ -277,7 +308,6 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
     if (list_empty(&(p->wrr.run_list))) return;
 
     wrr_entity->weight = 10;
-    wrr_entity->new_weight = 10;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
 
 }
@@ -344,7 +374,6 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
 
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
     return;
-    
 }
 
 /*
@@ -358,7 +387,6 @@ static void task_fork_wrr(struct task_struct *p)
     if (p == NULL) return;
 
     p->wrr.weight = p->real_parent->wrr.weight;
-    p->wrr.new_weight = p->real_parent->wrr.new_weight;
     p->wrr.time_slice = p->wrr.weight * WRR_TIMESLICE;
 
     return;
