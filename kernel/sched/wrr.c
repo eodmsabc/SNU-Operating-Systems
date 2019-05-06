@@ -22,6 +22,7 @@ const struct sched_class wrr_sched_class = {
     .set_curr_task      = set_curr_task_wrr,
     .task_tick          = task_tick_wrr,
     .task_fork          = task_fork_wrr,
+    .task_dead          = task_dead_wrr,
     .get_rr_interval    = get_rr_interval_wrr,
     .prio_changed       = prio_changed_wrr,
     .switched_to        = switched_to_wrr,
@@ -373,6 +374,14 @@ static void task_fork_wrr(struct task_struct *p)
     return;
 }
 
+static void task_dead_wrr(struct task_struct *p)
+{
+    /* TODO */
+    return;
+}
+
+#ifdef CONFIG_SMP
+
 static void find_polar_rq()
 {
     // TODO
@@ -438,6 +447,8 @@ static void rq_online_wrr(struct rq *rq)
 static void rq_offline_wrr(struct rq *rq)
 {
 }
+
+#endif
 
 static void switched_from_wrr(struct rq *rq, struct task_struct *p)
 {
