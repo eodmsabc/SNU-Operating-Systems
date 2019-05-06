@@ -137,35 +137,16 @@ void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
 
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
-    update_task_weight_wrr()
-    old_weight = wrr_se->weight;
-
-    if(old_weight == new_weight) {  // no need to update wrr_entity.        
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
-        return;
-    }
-
-    wrr_se->weight = new_weight;
-
-    list_move_tail(&(wrr_se->weight_list), &(wrr_rq->weight_array[new_weight]));
-
-    wrr_rq->weight_sum += new_weight - old_weight;
-
-    update_minmax_weight_wrr(wrr_rq);
+    update_task_weight_wrr(wrr_rq, p, new_weight);
 
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
-
-
 /* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
-static void update_task_weight_wrr(struct rq *rq, struct task_struct *p, int new_weight)
+static void update_task_weight_wrr(struct wrr_rq *wrr_rq, struct task_struct *p, int new_weight)
 {
-    struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
     int old_weight;
-
-    wrr_rq = &(rq->wrr_rq);
 
     wrr_se = &(p->wrr);
     old_weight = wrr_se->weight;
@@ -305,7 +286,7 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
 
     if(p == NULL) return;
     if(p->policy != SCHED_WRR) return;
-    if (list_empty(&(p->wrr.run_list))) return;
+    // if (list_empty(&(p->wrr.run_list))) return;
 
     wrr_entity->weight = 10;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
