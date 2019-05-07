@@ -64,6 +64,7 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     wrr_rq->max_weight = WEIGHT_INITIALVALUE;
 
     /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
+
     wrr_rq->usable = 1;    
     
     raw_spin_lock_init(&wrr_rq->wrr_runtime_lock);
@@ -395,6 +396,93 @@ static void task_dead_wrr(struct task_struct *p)
 }
 
 #ifdef CONFIG_SMP
+
+// return value -1 mean that there is no cpu to migration.
+static int find_lowest_weight_cpu()
+{
+    int curr_cpu;
+    int curr_weight;
+    int lowest_cpu;
+    int lowest_weight;
+    struct rq *rq;
+    struct wrr_rq *wrr_rq;
+
+    rcu_read_lock();
+
+    lowest_weight = -1; // not initialized..
+    for_each_online_cpu(curr_cpu)
+    {
+        rq = cpu_rq(curr_cpu);
+        wrr_rq = &(rq->wrr);
+        if(wrr_rq->usable != 0) // if cpu is usable
+        {
+            curr_weight = wrr_rq->weight_sum;
+            if(lowest_weight == -1)
+            {
+                lowest_cpu = curr_cpu;
+                lowest_weight = curr_weight;
+            }
+            else
+            {
+                if(lowest_weight > curr_weight)
+                {
+                    lowest_weight = curr_weight;
+                    lowest_cpu = curr_cpu;
+                }
+            }
+        }
+    }
+
+    rcu_read_unlock();
+
+    if(lowest_weight = -1) return -1; // can't find cpu.
+    else return lowest_cpu;
+}
+
+// return value -1 mean that there is no cpu to migration.
+static int find_highest_weight_cpu()
+{
+    int curr_cpu;
+    int curr_weight;
+    int highest_cpu;
+    int highest_weight;
+    struct rq *rq;
+    struct wrr_rq *wrr_rq;
+
+    rcu_read_lock();
+
+    highest_weight = -1; // not initialized..
+    for_each_online_cpu(curr_cpu)
+    {
+        rq = cpu_rq(curr_cpu);
+        wrr_rq = &(rq->wrr);
+        if(wrr_rq->usable != 0) // if cpu is usable
+        {
+            curr_weight = wrr_rq->weight_sum;
+            if(highest_weight == -1)
+            {
+                highest_cpu = curr_cpu;
+                highest_weight = curr_weight;
+            }
+            else
+            {
+                if(highest_weight < curr_weight)
+                {
+                    highest_weight = curr_weight;
+                    highest_cpu = curr_cpu;
+                }
+            }
+        }
+    }
+
+    rcu_read_unlock();
+
+    if(highest_weight = -1) return -1; // can't find cpu.
+    else return highest_cpu;
+}
+
+// if(cpumask_test_cpu(cpu, &(p->cpus_allowed))    // p : task_struct, check if task could assign to that cpu.
+
 
 static void find_polar_rq()
 {
