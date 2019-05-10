@@ -578,14 +578,19 @@ static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct t
     int weight_rq_to = (rq_to->wrr_rq).weight_sum;
     int weight_mig = (mig_task->wrr).weight;
 
-    if (rq_from->curr == mig_task) return 0; 
-    // current task is running
-    if (cpumask_test_cpu(rq_to->cpu, tsk_cpus_allowed(mig_task)) == 0) return 0;
-    // migrated task is not runable at other cpu.
-    
-    if(weight_rq_from - weight_mig <= weight_rq_to + weight_mig) return 0;    // migrate task is change order of weight..
-    else return 1;
+    // migrate task is change order of weight
+    if(weight_rq_from - weight_mig < weight_rq_to + weight_mig)
+        return 0;
 
+    // current task is running
+    if (rq_from->curr == mig_task)
+        return 0;
+    
+    // migrated task is not runable at other cpu.
+    if (!cpumask_test_cpu(rq_to->cpu, tsk_cpus_allowed(mig_task)))
+        return 0;
+    
+    return 1;
 }
 
 // this function called in core.c for load balancing.
