@@ -634,6 +634,9 @@ static void switched_from_wrr(struct rq *rq, struct task_struct *p)
 {
 }
 
+static void update_curr_wrr(struct rq *rq)
+{
+}
 
 const struct sched_class wrr_sched_class = {
 
