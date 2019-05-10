@@ -657,6 +657,7 @@ void trigger_load_balance_wrr(struct rq *rq)
 
 
     mig_found = 0;
+    migrated_task = NULL;
     // now find candidate for migration.
     for(i = weight_diff-1; i >= WRR_MINWEIGHT; i--) // start from weight difference.
     {
