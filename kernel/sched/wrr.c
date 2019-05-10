@@ -17,6 +17,12 @@
 #define lowest_rq(polar_value) (polar_value & (int) 65535);
 #define highest_rq(polar_value) (polar_value >> 16);
 
+DEFINE_SPINLOCK(wrr_loadbalance_lock); // this lock used at trigger_loadbalance.
+
+static unsigned long last_loadbalance_time; // value that saves last_loadbalance time.
+//this is static long value so it is initialized by 0.
+// this value used at trigger_loadbalance.
+
 
 const struct sched_class wrr_sched_class = {
 
@@ -473,79 +479,79 @@ static int find_highest_weight_cpu()
 }
 
 // return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct wrr_rq *find_lowest_weight_wrr_rq()
+static struct rq *find_lowest_weight_rq()
 {
     int curr_cpu;
     int curr_weight;
     int lowest_weight;
-    struct rq *rq;
+    struct rq *curr_rq;
+    struct rq *lowest_rq;
     struct wrr_rq *curr_wrr_rq;
-    struct wrr_rq *lowest_wrr_rq;
 
-    lowest_wrr_rq = NULL; // not initialized..
+    lowest_rq = NULL; // not initialized..
     lowest_weight = -1;
     for_each_online_cpu(curr_cpu)
     {
-        rq = cpu_rq(curr_cpu);
-        curr_wrr_rq = &(rq->wrr);
+        curr_rq = cpu_rq(curr_cpu);
+        curr_wrr_rq = &(curr_rq->wrr);
         if(curr_wrr_rq->usable != 0) // if cpu is usable
         {
             curr_weight = curr_wrr_rq->weight_sum;
-            if(lowest_weight == -1)
+            if(lowest_weight == -1) // not initialized..
             {
-                lowest_wrr_rq = curr_wrr_rq;
+                lowest_rq = curr_rq;
                 lowest_weight = curr_weight;
             }
             else
             {
                 if(lowest_weight > curr_weight)
                 {
-                    lowest_wrr_rq = curr_wrr_rq;
+                    lowest_rq = curr_rq;
                     lowest_weight = curr_weight;
                 }
             }
         }
     }
 
-    return lowest_wrr_rq;
+    return lowest_rq;
 }
 
 // return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct wrr_rq *find_highest_weight_wrr_rq()
+static struct rq *find_highest_weight_rq()
 {
     int curr_cpu;
     int curr_weight;
     int highest_weight;
-    struct rq *rq;
+    struct rq *curr_rq;
+    struct rq *highest_rq;
     struct wrr_rq *curr_wrr_rq;
-    struct wrr_rq *highest_wrr_rq;
-
-    highest_wrr_rq = NULL;
+    
+    highest_rq = NULL;
     highest_weight = -1; // not initialized..
     for_each_online_cpu(curr_cpu)
     {
-        rq = cpu_rq(curr_cpu);
-        curr_wrr_rq = &(rq->wrr);
+        curr_rq = cpu_rq(curr_cpu);
+        curr_wrr_rq = &(curr_rq->wrr);
         if(curr_wrr_rq->usable != 0) // if cpu is usable
         {
             curr_weight = curr_wrr_rq->weight_sum;
             if(highest_weight == -1)
             {
-                highest_wrr_rq = curr_wrr_rq;
+                highest_rq = curr_rq;
                 highest_weight = curr_weight;
             }
             else
             {
                 if(highest_weight < curr_weight)
                 {
-                    highest_wrr_rq = curr_wrr_rq;
+                    highest_rq = curr_rq;
                     highest_weight = curr_weight;
                 }
             }
         }
     }
 
-    return highest_wrr_rq;
+    return highest_rq;
 }
 
 
@@ -560,14 +566,129 @@ static void find_polar_rq()
     // return masked cpu number (high 16 bit is highest, lower 16 bit is lowest)
 }
 
+
+
+
+
+
+// if migration available, return 1 else return 0.
+static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct task_struct *mig_task)
+{
+    int weight_rq_from = (rq_from->wrr_rq).weight_sum;
+    int weight_rq_to = (rq_to->wrr_rq).weight_sum;
+    int weight_mig = (mig_task->wrr).weight;
+
+    if (rq_from->curr == mig_task) return 0; 
+    // current task is running
+    if (cpumask_test_cpu(rq_to->cpu, tsk_cpus_allowed(mig_task)) == 0) return 0;
+    // migrated task is not runable at other cpu.
+    
+    if(weight_rq_from - weight_mig <= weight_rq_to + weight_mig) return 0;    // migrate task is change order of weight..
+    else return 1;
+
+}
+
 // this function called in core.c for load balancing.
 void trigger_load_balance_wrr(struct rq *rq)
 {
     // TODO
     /* check if 2000ms passed since last load balancing */
-    int v = find_polar_rq();
-    int lowest = _lowest_rq(v);
-    int highest = _highest_rq(v);
+
+    struct rq *rq_highest_weight;
+    struct rq *rq_lowest_weight;
+    struct wrr_rq *wrr_rq_highest_weight;
+    struct wrr_rq *wrr_rq_lowest_weight;
+    struct task_struct *migrated_task = NULL;
+    struct task_struct *current_task;
+    struct list_head *wrr_rq_weight_list;
+
+    unsigned long current_time;
+    int weight_highest;
+    int weight_lowest;
+    int weight_diff;
+    int weight_migrated_task;
+    int i;
+    int mig_found = 0;
+
+    struct sched_wrr_entity *curr_entity, *tmp_entity;
+
+
+
+    // check is 2000ms passed
+    spin_lock(&wrr_loadbalance_lock);
+    current_time = jiffies;
+    if (current_time < last_loadbalance_time + 2*HZ)
+    {
+        spin_unlock(&wrr_loadbalance_lock);
+        return;
+    }
+    last_loadbalance_time = current_time;
+    spin_unlock(&wrr_loadbalance_lock);
+
+    rcu_read_lock();
+    rq_highest_weight = find_highest_weight_rq();
+    rq_lowest_weight = find_lowest_weight_rq();
+    rcu_read_unlock();
+
+    if(rq_highest_weight == NULL) return;
+    if(rq_lowest_weight == NULL) return;
+    // can't find runqueue to migrate.  
+    // (1 cpu exist or there is no usable cpu. only cpu wrr_rq->usable is 0)
+
+    if(rq_highest_weight == rq_lowest_weight) return;
+    // 1 cpu exist case
+
+    double_rq_lock(rq_highest_weight, rq_lowest_weight);
+    
+    wrr_rq_highest_weight = rq_highest_weight->wrr_rq;
+    wrr_rq_lowest_weight = rq_lowest_weight->wrr_rq;
+
+    weight_highest = wrr_rq_highest_weight->weight_sum;
+    weight_lowest = wrr_rq_lowest_weight->weight_sum;
+
+    weight_diff = weight_highest - weight_lowest;
+
+    if(weight_diff > WRR_MAXWEIGHT) weight_diff = WRR_MAXWEIGHT+1;
+    else if(weight_diff <= WRR_MINWEIGHT)   // weight difference is lower than min weight, counldn't migrate.
+    {
+        double_rq_unlock(rq_highest_weight, rq_lowest_weight);
+        return;
+    }
+
+
+    mig_found = 0;
+    // now find candidate for migration.
+    for(i = weight_diff-1; i >= WRR_MINWEIGHT; i--) // start from weight difference.
+    {
+        if(mig_found == 1) break;   // if migration task found..
+
+        wrr_rq_weight_list = &(wrr_rq_highest_weight->weight_array[i]);
+
+        list_for_each_entry_safe(curr_entity, tmp_entity, wrr_rq_weight_list, weight_list)
+        {
+            current_task = container_of(curr_entity, struct task_struct, wrr);
+
+            if(is_migration_available(rq_highest_weight, rq_lowest_weight, current_task))
+            {
+                mig_found = 1;
+                migrated_task = current_task;
+                break;
+            }
+        }
+    }
+
+    if (migrated_task == NULL)  // there is no migrate task.
+    {
+        double_rq_unlock(rq_highest_weight, rq_lowest_weight);
+        return;
+    }
+
+    // deactive task before moving to other cpu.
+
+    deactivate_task(rq_highest_weight, migrated_task, 0);
+    set_task_cpu(migrated_task, rq_lowest_weight->cpu);
+    activate_task(rq_lowest_weight, migrated_task, 0);
+    double_rq_unlock(rq_highest_weight, rq_lowest_weight);
 
     /* if this cpu == highest and weight differnce is enough then */
     /*     search for suitable task for migration */
