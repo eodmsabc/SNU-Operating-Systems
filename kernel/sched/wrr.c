@@ -23,40 +23,9 @@ static unsigned long last_loadbalance_time; // value that saves last_loadbalance
 //this is static long value so it is initialized by 0.
 // this value used at trigger_loadbalance.
 
-
-const struct sched_class wrr_sched_class = {
-
-    .next               = &fair_sched_class,
-    .enqueue_task       = enqueue_task_wrr,
-    .dequeue_task       = dequeue_task_wrr,
-    .yield_task         = yield_task_wrr,
-    .check_preempt_curr = check_preempt_curr_wrr,
-    .pick_next_task     = pick_next_task_wrr,
-    .put_prev_task      = put_prev_task_wrr,
-    .set_curr_task      = set_curr_task_wrr,
-    .task_tick          = task_tick_wrr,
-    .task_fork          = task_fork_wrr,
-    .task_dead          = task_dead_wrr,
-    .get_rr_interval    = get_rr_interval_wrr,
-    .prio_changed       = prio_changed_wrr,
-    .switched_to        = switched_to_wrr,
-    .update_curr        = update_curr_wrr,
-
-
-#ifdef CONFIG_SMP
-    .select_task_rq   = select_task_rq_wrr,
-    .set_cpus_allowed = set_cpus_allowed_common,
-    .rq_online        = rq_online_wrr,
-    .rq_offline       = rq_offline_wrr,
-    .task_woken       = task_woken_wrr,
-    .switched_from    = switched_from_wrr
-#endif  /* CONFIG SMP */
-
-};
-
 void init_wrr_rq(struct wrr_rq *wrr_rq)
 {
-    int i;
+    int i, cpu;
 
     INIT_LIST_HEAD(&wrr_rq->queue);
     
@@ -71,7 +40,16 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 
     /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
 
-    wrr_rq->usable = 1;    
+    cpu = get_cpu();
+    put_cpu();
+    if (cpu == 0) {
+        wrr_rq->usable = 0;
+    }
+    else {
+        wrr_rq->usable = 1;
+    }
+
+    wrr_rq->usable = 1;
     
     raw_spin_lock_init(&wrr_rq->wrr_runtime_lock);
 }
@@ -82,35 +60,16 @@ static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_s
 	return container_of(wrr_se, struct task_struct, wrr);
 }
 
-static wrr_rq *get_runqueue_of_wrr_entity(struct sched_wrr_entity *wrr_se)
+static struct wrr_rq *get_runqueue_of_wrr_entity(struct sched_wrr_entity *wrr_se)
 {
     return wrr_se->wrr_runqueue;
-}
-
-/* this function update wrr queue. modifies count, weight sum, min and max weight.
- when insert item. need locking. */
-static void
-update_insert_wrr(struct wrr_rq *wrr_rq, int weight)
-{
-    (wrr_rq->count)++;
-    (wrr_rq->weight_sum) += weight;
-    update_minmax_weight_wrr(wrr_rq);
-}
-
-/* this function update wrr queue. modifies count, weight sum, min and max weight.
- when delete item. need locking. */
-static void
-update_delete_wrr(struct wrr_rq *wrr_rq, int weight)
-{
-    (wrr_rq->count)--;
-    (wrr_rq->weight_sum) -= weight;
-    update_minmax_weight_wrr(wrr_rq);
 }
 
 /* this function update max&min weight of wrr queue. need locking. */
 static void
 update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
 {
+    int i;
     int min_weight = WEIGHT_INITIALVALUE;
     int max_weight = WEIGHT_INITIALVALUE;
     struct list_head *weight_array = wrr_rq->weight_array;
@@ -140,28 +99,24 @@ update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
     // set weight. if list is all empty, then set initial value.
 }
 
-
-/* this function update new_weight to weight, and change wrr_rq's structure by then. */
-void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
+/* this function update wrr queue. modifies count, weight sum, min and max weight.
+ when insert item. need locking. */
+static void
+update_insert_wrr(struct wrr_rq *wrr_rq, int weight)
 {
-    struct wrr_rq *wrr_rq;
-    struct sched_wrr_entity *wrr_se;
-    int old_weight;
+    (wrr_rq->count)++;
+    (wrr_rq->weight_sum) += weight;
+    update_minmax_weight_wrr(wrr_rq);
+}
 
-    wrr_se = &(p->wrr);
-    wrr_rq = &(wrr_se->wrr_runqueue);
-
-    if(wrr_rq == NULL)
-    {
-        printk(KERN_ALERT" wrr_se doesn't have runqueue! \n");
-        return;
-    }
-
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-
-    update_task_weight_wrr(wrr_rq, p, new_weight);
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+/* this function update wrr queue. modifies count, weight sum, min and max weight.
+ when delete item. need locking. */
+static void
+update_delete_wrr(struct wrr_rq *wrr_rq, int weight)
+{
+    (wrr_rq->count)--;
+    (wrr_rq->weight_sum) -= weight;
+    update_minmax_weight_wrr(wrr_rq);
 }
 
 /* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
@@ -186,6 +141,28 @@ static void update_task_weight_wrr(struct wrr_rq *wrr_rq, struct task_struct *p,
     update_minmax_weight_wrr(wrr_rq);
 }
 
+/* this function update new_weight to weight, and change wrr_rq's structure by then. */
+void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
+{
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+
+    wrr_se = &(p->wrr);
+    wrr_rq = wrr_se->wrr_runqueue;
+
+    if(wrr_rq == NULL)
+    {
+        printk(KERN_ALERT" wrr_se doesn't have runqueue! \n");
+        return;
+    }
+
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+
+    update_task_weight_wrr(wrr_rq, p, new_weight);
+
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+}
+
 /* enqueue, dequeue, requeue */
 /* assume for now that the entity p->wrr is populated */
 static void
@@ -199,7 +176,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_entity_weight_list;
     int weight;
     
-    wrr_rq = &(rq->wrr_rq);
+    wrr_rq = &(rq->wrr);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_entity = &(p->wrr);
@@ -216,7 +193,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_add(wrr_entity_weight_list, wrr_rq_weight_arr);
     // add wrr_entity to runqueue & weightqueue.
 
-    update_insert_wrr(*wrr_rq, weight);
+    update_insert_wrr(wrr_rq, weight);
 
     wrr_entity->wrr_runqueue = wrr_rq;      // set entity's runqueue to this wrr_runqueue.
     
@@ -234,7 +211,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_entity_weight_list;
     int weight;
     
-    wrr_rq = &(rq->wrr_rq);
+    wrr_rq = &(rq->wrr);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_entity = &(p->wrr);
@@ -250,7 +227,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_del_init(wrr_entity_run_list);
     list_del_init(wrr_entity_weight_list);
 
-    update_delete_wrr(*wrr_rq, weight);
+    update_delete_wrr(wrr_rq, weight);
 
     wrr_entity->wrr_runqueue = NULL;      // set entity's runqueue to NULL.
     
@@ -259,20 +236,20 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
 /* need to update entity AFTER requeue */
 static void
-requeue_task_wrr(struct rq *rq, struct task_struct *p);
+requeue_task_wrr(struct rq *rq, struct task_struct *p)
 {
     /* todo - many other things */
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
 
-    wrr_rq = &(rq->wrr_rq);
+    wrr_rq = &(rq->wrr);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_se = &(p->wrr);
 
     list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
-    wrr_se->timeslice = wrr_se->weight * WRR_TIMESLICE;
+    wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
 
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
@@ -286,11 +263,11 @@ static struct task_struct *
 pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
     struct wrr_rq *wrr_rq = &(rq->wrr);
-    if(list_empty(wrr_rq->queue)) {
+    if(list_empty(&(wrr_rq->queue))) {
         return NULL;
     }
     else {
-        return wrr_rq->queue.next.task;
+        return list_first_entry(&wrr_rq->queue, struct sched_wrr_entity, run_list) -> task;
     }
 }
 
@@ -346,7 +323,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     struct list_head *wrr_entity_run_list;
     struct list_head *wrr_entity_weight_list;
 
-    wrr_rq = &(rq->wrr_rq);
+    wrr_rq = &(rq->wrr);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     if(p == NULL)   // if task_struct don't accessible..
@@ -361,7 +338,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     }
 
     wrr_entity = &(p->wrr);
-    wrr_entity_run_list = wrr_entity->run_list;
+    wrr_entity_run_list = &(wrr_entity->run_list);
 
     if(--(p->wrr.time_slice))  // if current task time_slice is not zero.. don't need to re_schedule.
     {
@@ -400,10 +377,14 @@ static void task_dead_wrr(struct task_struct *p)
     return;
 }
 
+static void update_curr_wrr(struct rq *rq) {
+    ;
+}
+
 #ifdef CONFIG_SMP
 
 // return value -1 mean that there is no cpu to migration. need RCU lock.
-static int find_lowest_weight_cpu()
+static int find_lowest_weight_cpu(void)
 {
     int curr_cpu;
     int curr_weight;
@@ -436,12 +417,12 @@ static int find_lowest_weight_cpu()
         }
     }
 
-    if(lowest_weight = -1) return -1; // can't find cpu.
+    if(lowest_weight == -1) return -1; // can't find cpu.
     else return lowest_cpu;
 }
 
 // return value -1 mean that there is no cpu to migration. need RCU lock.
-static int find_highest_weight_cpu()
+static int find_highest_weight_cpu(void)
 {
     int curr_cpu;
     int curr_weight;
@@ -474,12 +455,12 @@ static int find_highest_weight_cpu()
         }
     }
 
-    if(highest_weight = -1) return -1; // can't find cpu.
+    if(highest_weight == -1) return -1; // can't find cpu.
     else return highest_cpu;
 }
 
 // return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct rq *find_lowest_weight_rq()
+static struct rq *find_lowest_weight_rq(void)
 {
     int curr_cpu;
     int curr_weight;
@@ -517,7 +498,7 @@ static struct rq *find_lowest_weight_rq()
 }
 
 // return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct rq *find_highest_weight_rq()
+static struct rq *find_highest_weight_rq(void)
 {
     int curr_cpu;
     int curr_weight;
@@ -558,6 +539,7 @@ static struct rq *find_highest_weight_rq()
 // if(cpumask_test_cpu(cpu, &(p->cpus_allowed))    // p : task_struct, check if task could assign to that cpu.
 
 
+/*
 static void find_polar_rq()
 {
     // TODO
@@ -567,15 +549,15 @@ static void find_polar_rq()
 }
 
 
-
+*/
 
 
 
 // if migration available, return 1 else return 0.
 static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct task_struct *mig_task)
 {
-    int weight_rq_from = (rq_from->wrr_rq).weight_sum;
-    int weight_rq_to = (rq_to->wrr_rq).weight_sum;
+    int weight_rq_from = (rq_from->wrr).weight_sum;
+    int weight_rq_to = (rq_to->wrr).weight_sum;
     int weight_mig = (mig_task->wrr).weight;
 
     // migrate task is change order of weight
@@ -587,7 +569,7 @@ static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct t
         return 0;
     
     // migrated task is not runable at other cpu.
-    if (!cpumask_test_cpu(rq_to->cpu, tsk_cpus_allowed(mig_task)))
+    if (!cpumask_test_cpu(rq_to->cpu, &(mig_task->cpus_allowed)))
         return 0;
     
     return 1;
@@ -645,8 +627,8 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     double_rq_lock(rq_highest_weight, rq_lowest_weight);
     
-    wrr_rq_highest_weight = rq_highest_weight->wrr_rq;
-    wrr_rq_lowest_weight = rq_lowest_weight->wrr_rq;
+    wrr_rq_highest_weight = &(rq_highest_weight->wrr);
+    wrr_rq_lowest_weight = &(rq_lowest_weight->wrr);
 
     weight_highest = wrr_rq_highest_weight->weight_sum;
     weight_lowest = wrr_rq_lowest_weight->weight_sum;
@@ -753,3 +735,33 @@ static void switched_from_wrr(struct rq *rq, struct task_struct *p)
 }
 
 #endif
+
+const struct sched_class wrr_sched_class = {
+
+    .next               = &fair_sched_class,
+    .enqueue_task       = enqueue_task_wrr,
+    .dequeue_task       = dequeue_task_wrr,
+    .yield_task         = yield_task_wrr,
+    .check_preempt_curr = check_preempt_curr_wrr,
+    .pick_next_task     = pick_next_task_wrr,
+    .put_prev_task      = put_prev_task_wrr,
+    .set_curr_task      = set_curr_task_wrr,
+    .task_tick          = task_tick_wrr,
+    .task_fork          = task_fork_wrr,
+    .task_dead          = task_dead_wrr,
+    .get_rr_interval    = get_rr_interval_wrr,
+    .prio_changed       = prio_changed_wrr,
+    .switched_to        = switched_to_wrr,
+    .update_curr        = update_curr_wrr,
+
+
+#ifdef CONFIG_SMP
+    .select_task_rq   = select_task_rq_wrr,
+    .set_cpus_allowed = set_cpus_allowed_common,
+    .rq_online        = rq_online_wrr,
+    .rq_offline       = rq_offline_wrr,
+    .task_woken       = task_woken_wrr,
+    .switched_from    = switched_from_wrr
+#endif  /* CONFIG SMP */
+
+};
