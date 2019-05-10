@@ -51,16 +51,16 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     raw_spin_lock_init(&wrr_rq->wrr_runtime_lock);
 }
 
-// get task of wrr_entity
-static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_se)
-{
-	return container_of(wrr_se, struct task_struct, wrr);
-}
+/* // get task of wrr_entity */
+/* static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_se) */
+/* { */
+/* 	return container_of(wrr_se, struct task_struct, wrr); */
+/* } */
 
-static struct wrr_rq *get_runqueue_of_wrr_entity(struct sched_wrr_entity *wrr_se)
-{
-    return wrr_se->wrr_runqueue;
-}
+/* static struct wrr_rq *get_runqueue_of_wrr_entity(struct sched_wrr_entity *wrr_se) */
+/* { */
+/*     return wrr_se->wrr_runqueue; */
+/* } */
 
 /* this function update max&min weight of wrr queue. need locking. */
 static void
@@ -315,10 +315,10 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
 {
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_entity;
-    struct list_head *wrr_rq_queue;
-    struct list_head *wrr_rq_weight_arr;
+    /* struct list_head *wrr_rq_queue; */
+    /* struct list_head *wrr_rq_weight_arr; */
     struct list_head *wrr_entity_run_list;
-    struct list_head *wrr_entity_weight_list;
+    /* struct list_head *wrr_entity_weight_list; */
 
     wrr_rq = &(rq->wrr);
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
@@ -453,10 +453,6 @@ static struct rq *find_highest_weight_rq(void)
 // if migration available, return 1 else return 0.
 static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct task_struct *mig_task)
 {
-    int weight_rq_from = (rq_from->wrr).weight_sum;
-    int weight_rq_to = (rq_to->wrr).weight_sum;
-    int weight_mig = (mig_task->wrr).weight;
-
     // current task is running
     if (rq_from->curr == mig_task)
         return 0;
@@ -487,7 +483,6 @@ void trigger_load_balance_wrr(struct rq *rq)
     int minweight_highest;
     int weight_lowest;
     int weight_diff;
-    int weight_migrated_task;
     int i;
     int mig_found = 0;
 
@@ -591,8 +586,6 @@ void trigger_load_balance_wrr(struct rq *rq)
 static int
 select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 {
-    struct task_struct *curr;
-    struct rq *rq;
     struct rq *target_rq;
     int target;
 
