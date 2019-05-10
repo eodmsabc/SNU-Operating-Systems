@@ -1520,9 +1520,9 @@ static inline void set_curr_task(struct rq *rq, struct task_struct *curr)
 extern const struct sched_class stop_sched_class;
 extern const struct sched_class dl_sched_class;
 extern const struct sched_class rt_sched_class;
+extern const struct sched_class wrr_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
-extern const struct sched_class wrr_sched_class;
 
 
 #ifdef CONFIG_SMP
@@ -1531,6 +1531,7 @@ extern void update_group_capacity(struct sched_domain *sd, int cpu);
 
 extern void trigger_load_balance(struct rq *rq);
 extern void trigger_load_balance_wrr(struct rq *rq);
+extern void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight);
 
 extern void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_mask);
 

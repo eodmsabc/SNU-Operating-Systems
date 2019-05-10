@@ -6779,7 +6779,7 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
 {
     struct task_struct *p;
     struct sched_wrr_entity *wrr_se;
-    int uid, euid, tuid, teuid;
+    kuid_t root;
     bool is_owner = false, is_root = false, granted = false;
     int policy, old_weight;
     int retval;
@@ -6790,7 +6790,13 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
     /* get task_struct */
     retval = -ESRCH;
     rcu_read_lock();
-    p = find_process_by_pid(pid);
+
+    if (pid == 0) {
+        p = current;
+    }
+    else {
+        p = find_process_by_pid(pid);
+    }
 
     if (p) {
         retval = security_task_getscheduler(p);
@@ -6801,14 +6807,11 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
             retval = -EINVAL;
             if (policy == SCHED_WRR) {
 
-                uid = getuid();
-                euid = geteuid();
-                tuid = task_uid(p);
-                teuid = task_euid(p);
+                root.val = 0;
 
                 // TODO check privileges, not sure
-                is_root = (euid == 0);
-                is_owner = (euid == teuid);
+                is_root = uid_eq(current->cred->euid, root);
+                is_owner = check_same_owner(p);
                 
                 old_weight = p->wrr.weight;
                 wrr_se = &p->wrr;
