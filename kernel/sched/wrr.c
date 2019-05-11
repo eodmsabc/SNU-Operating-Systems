@@ -48,7 +48,7 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 
     wrr_rq->usable = 1;
     
-    raw_spin_lock_init(&wrr_rq->wrr_runtime_lock);
+    raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
 }
 
 /* // get task of wrr_entity */

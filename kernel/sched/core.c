@@ -3730,31 +3730,31 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	 *      --> -dl task blocks on mutex A and could preempt the
 	 *          running task
 	 */
-    if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
-    else
-    {
-        if (dl_prio(prio)) {
-            if (!dl_prio(p->normal_prio) ||
-                (pi_task && dl_entity_preempt(&pi_task->dl, &p->dl))) {
-                p->dl.dl_boosted = 1;
-                queue_flag |= ENQUEUE_REPLENISH;
-            } else
-                p->dl.dl_boosted = 0;
-            p->sched_class = &dl_sched_class;
-        } else if (rt_prio(prio)) {
-            if (dl_prio(oldprio))
-                p->dl.dl_boosted = 0;
-            if (oldprio < prio)
-                queue_flag |= ENQUEUE_HEAD;
-            p->sched_class = &rt_sched_class;
-        } else {
-            if (dl_prio(oldprio))
-                p->dl.dl_boosted = 0;
-            if (rt_prio(oldprio))
-                p->rt.timeout = 0;
-            p->sched_class = &fair_sched_class;
-        }
+    if (dl_prio(prio)) {
+        if (!dl_prio(p->normal_prio) ||
+            (pi_task && dl_entity_preempt(&pi_task->dl, &p->dl))) {
+            p->dl.dl_boosted = 1;
+            queue_flag |= ENQUEUE_REPLENISH;
+        } else
+            p->dl.dl_boosted = 0;
+        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
+        else p->sched_class = &dl_sched_class;
+    } else if (rt_prio(prio)) {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        if (oldprio < prio)
+            queue_flag |= ENQUEUE_HEAD;
+        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
+        else p->sched_class = &rt_sched_class;
+    } else {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        if (rt_prio(oldprio))
+            p->rt.timeout = 0;
+        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
+        else p->sched_class = &fair_sched_class;
     }
+
 
 	p->prio = prio;
 
