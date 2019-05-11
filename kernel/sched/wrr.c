@@ -24,10 +24,10 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 {
     int i, cpu;
 
-    INIT_LIST_HEAD(&wrr_rq->queue);
+    INIT_LIST_HEAD(&(wrr_rq->queue));
     
     for(i = WRR_MINWEIGHT; i <= WRR_MAXWEIGHT; i++) {
-        INIT_LIST_HEAD(&wrr_rq->weight_array[i]);
+        INIT_LIST_HEAD(&(wrr_rq->weight_array[i]));
     }
     
     wrr_rq->count = 0;
@@ -278,12 +278,12 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
     // populate p->wrr (which is entity)
     // assign task to laziest cpu
     struct sched_wrr_entity *wrr_entity;
-    wrr_entity = &(p->wrr);
 
     if(p == NULL) return;
     if(p->policy != SCHED_WRR) return;
     // if (list_empty(&(p->wrr.run_list))) return;
 
+    wrr_entity = &(p->wrr);
     wrr_entity->weight = 10;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
 
@@ -337,7 +337,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     wrr_entity = &(p->wrr);
     wrr_entity_run_list = &(wrr_entity->run_list);
 
-    if(--(p->wrr.time_slice))  // if current task time_slice is not zero.. don't need to re_schedule.
+    if(--(wrr_entity->time_slice) > 0)  // if current task time_slice is not zero.. don't need to re_schedule.
     {
         raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
@@ -362,8 +362,8 @@ static void task_fork_wrr(struct task_struct *p)
 {
     if (p == NULL) return;
 
-    p->wrr.weight = p->real_parent->wrr.weight;
-    p->wrr.time_slice = p->wrr.weight * WRR_TIMESLICE;
+    (p->wrr).weight = (p->real_parent)->wrr).weight;
+    (p->wrr).time_slice = (p->wrr).weight * WRR_TIMESLICE;
 
     return;
 }
@@ -584,11 +584,45 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         migrate task */
 }
 
+//return value 1 means that p is only allowed cpu zero.
+static int is_task_only_allowed_cpu_zero(struct task_struct *p)
+{
+
+}
+
+//need rcu lock.
+static int get_any_cpu_not_zero(struct task_struct *p)
+{
+
+}
+
+/**
+ * cpumask_any_but_online - return a "random" in a cpumask, but not this one.
+ * @mask: the cpumask to search
+ * @cpu: the cpu to ignore.
+ *
+ * Often used to find any cpu but smp_processor_id() in a mask.
+ * Returns >= nr_cpu_ids if no cpus set.
+ */
+// need rcu lock. this function copied & modified from lib/cpumask.c
+static int cpumask_any_but_online(const struct cpumask *mask, unsigned int cpu)
+{
+	unsigned int i;
+
+	cpumask_check(cpu);
+	for_each_cpu_and(i, mask, cpu_online_mask) // iterate at availble & online cpu.
+		if (i != cpu)
+			break;
+	return i;
+}
+
 /* copied from rt.c's implementation */
 // return cpu that is suitable to get new task 
 static int
 select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 {
+
+    // TODO : handle error when there is no cpu to insert new task.
     struct rq *target_rq;
     int target;
 
@@ -598,6 +632,13 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     }
 
     if(p->nr_cpus_allowed == 1) {
+        rcu_read_lock();
+        target = cpumask_any_but_online(&p->cpus_allowed, 0)
+        rcu_read_unlock();
+        if (target == 0)
+        {
+            printk(KERN_ALERT"task's only available cpu is cpu zero! this is not allowed!\n");
+        }   // need to handle error
         return cpumask_first(&(p->cpus_allowed));
     }
 
@@ -607,10 +648,15 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 
     target = (target_rq == NULL) ? cpu : cpu_of(target_rq);
 
-    if (cpumask_test_cpu(target, &p->cpus_allowed) == 0) {
-        target = cpumask_any(&p->cpus_allowed);
+    if (cpumask_test_cpu(target, &p->cpus_allowed) == 0) {  // if task coudln't assign to target, just get random task
+        rcu_read_lock();
+        target = cpumask_any_but_online(&p->cpus_allowed, 0);
+        rcu_read_unlock();
+        if(target >= nr_cpu_ids)
+        {
+            printk(KERN_ALERT"there is no cpu that task is allowed!\n");
+        }   // need to handle error
     }
-
     return target;
 }
 
