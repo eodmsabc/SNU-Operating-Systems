@@ -453,6 +453,10 @@ static struct rq *find_highest_weight_rq(void)
 // if migration available, return 1 else return 0.
 static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct task_struct *mig_task)
 {
+    int weight_rq_from = (rq_from->wrr).weight_sum;
+    int weight_rq_to = (rq_to->wrr).weight_sum;
+    int weight_mig = (mig_task->wrr).weight;
+
     // current task is running
     if (rq_from->curr == mig_task)
         return 0;
@@ -460,8 +464,9 @@ static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct t
     // migrated task is not runable at other cpu.
     if (!cpumask_test_cpu(rq_to->cpu, &(mig_task->cpus_allowed)))
         return 0;
-    
-    return 1;
+
+    if(weight_rq_from - weight_mig <= weight_rq_to + weight_mig) return 0;
+    else return 1;
 }
 
 // this function called in core.c for load balancing.
