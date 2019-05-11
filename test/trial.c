@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <uapi/linux/sched/types.h>
 
 #define SYSCALL_SCHED_SETSCHEDULER 156
 #define SYSCALL_SETWEIGHT 398
@@ -37,8 +38,11 @@ int main(int argc, char** argv)
     else {
         id = (argc == 2)? atoi(argv[1]) : 0;
     }
+
+    struct sched_param param; 
+    param.sched_priority = 0;
     // SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy, struct sched_param __user *, param)
-    if (syscall(SYSCALL_SCHED_SETSCHEDULER, getpid() , SCHED_WRR, 0)) {
+    if (syscall(SYSCALL_SCHED_SETSCHEDULER, 0 , SCHED_WRR, &param)) {
         fprintf(stderr, "trial-%d: failed setting schedule policy to wrr", id);
         return 1;
     }
