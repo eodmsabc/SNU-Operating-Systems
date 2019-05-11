@@ -231,7 +231,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
-/* need to update entity AFTER requeue */
+/* need to update entity AFTER requeue. */
 static void
 requeue_task_wrr(struct rq *rq, struct task_struct *p)
 {
@@ -240,8 +240,9 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
     struct sched_wrr_entity *wrr_se;
 
     wrr_rq = &(rq->wrr);
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+    
     wrr_se = &(p->wrr);
 
     list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
@@ -321,16 +322,13 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
     /* struct list_head *wrr_entity_weight_list; */
 
     wrr_rq = &(rq->wrr);
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     if(p == NULL)   // if task_struct don't accessible..
     {
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
     }
     else if(p->policy != SCHED_WRR) // policy is not SCHED_WRR, don't need to do job.
     {
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
     }
 
@@ -339,13 +337,11 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
 
     if(--(wrr_entity->time_slice) > 0)  // if current task time_slice is not zero.. don't need to re_schedule.
     {
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
     }
     else
     {
         requeue_task_wrr(rq, p);
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         // should we use set_tsk_need_resched(p)?
     }
