@@ -566,8 +566,6 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     deactivate_task(rq_highest_weight, migrated_task, 0);
     set_task_cpu(migrated_task, rq_lowest_weight->cpu);
-    dequeue_task_wrr(rq_highest_weight, migrated_task, 0);
-    enqueue_task_wrr(rq_lowest_weight, migrated_task, 0);
     activate_task(rq_lowest_weight, migrated_task, 0);
 
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
