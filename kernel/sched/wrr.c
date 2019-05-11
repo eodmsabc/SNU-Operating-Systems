@@ -362,7 +362,7 @@ static void task_fork_wrr(struct task_struct *p)
 {
     if (p == NULL) return;
 
-    (p->wrr).weight = (p->real_parent)->wrr).weight;
+    (p->wrr).weight = ((p->real_parent)->wrr).weight;
     (p->wrr).time_slice = (p->wrr).weight * WRR_TIMESLICE;
 
     return;
@@ -584,18 +584,6 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         migrate task */
 }
 
-//return value 1 means that p is only allowed cpu zero.
-static int is_task_only_allowed_cpu_zero(struct task_struct *p)
-{
-
-}
-
-//need rcu lock.
-static int get_any_cpu_not_zero(struct task_struct *p)
-{
-
-}
-
 /**
  * cpumask_any_but_online - return a "random" in a cpumask, but not this one.
  * @mask: the cpumask to search
@@ -633,7 +621,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 
     if(p->nr_cpus_allowed == 1) {
         rcu_read_lock();
-        target = cpumask_any_but_online(&p->cpus_allowed, 0)
+        target = cpumask_any_but_online(&p->cpus_allowed, 0);
         rcu_read_unlock();
         if (target == 0)
         {
