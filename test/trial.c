@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <uapi/linux/sched/types.h>
+
+// copied from /include/uapi/linux/sched/types.h
+struct sched_param {
+	int sched_priority;
+};
 
 #define SYSCALL_SCHED_SETSCHEDULER 156
 #define SYSCALL_SETWEIGHT 398
