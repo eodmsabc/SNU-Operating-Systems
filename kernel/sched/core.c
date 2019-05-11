@@ -6791,12 +6791,7 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
     retval = -ESRCH;
     rcu_read_lock();
 
-    if (pid == 0) {
-        p = current;
-    }
-    else {
-        p = find_process_by_pid(pid);
-    }
+    p = find_process_by_pid(pid);
 
     if (p) {
         retval = security_task_getscheduler(p);
