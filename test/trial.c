@@ -37,8 +37,8 @@ int main(int argc, char** argv)
     else {
         id = (argc == 2)? atoi(argv[1]) : 0;
     }
-
-    if (syscall(SYSCALL_SCHED_SETSCHEDULER, 0, SCHED_WRR, 0)) {
+    // SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy, struct sched_param __user *, param)
+    if (syscall(SYSCALL_SCHED_SETSCHEDULER, getpid() , SCHED_WRR, 0)) {
         fprintf(stderr, "trial-%d: failed setting schedule policy to wrr", id);
         return 1;
     }
