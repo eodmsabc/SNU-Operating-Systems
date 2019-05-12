@@ -6780,6 +6780,8 @@ const u32 sched_prio_to_wmult[40] = {
 SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)  
 {
     struct task_struct *p;
+    struct rq *rq;
+    struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
     kuid_t root;
     bool is_owner = false, is_root = false, granted = false;
@@ -6824,8 +6826,14 @@ SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)
                 }
 
                 if (granted) {
-                    update_task_weight_wrr_by_task(p, weight);
-                    //wrr_se -> new_weight = weight;
+                    p->wrr.weight = weight;
+                    rq = cpu_rq(task_cpu(p));
+                    wrr_rq = &(rq->wrr);
+                    
+                    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+                    wrr_rq->weight_sum += weight - old_weight;
+                    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+
                     retval = 0;
                 }
             }

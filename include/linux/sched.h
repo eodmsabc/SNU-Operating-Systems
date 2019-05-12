@@ -537,11 +537,8 @@ struct sched_dl_entity {
 /* wrr entity. see other entities */
 struct sched_wrr_entity {
 	struct list_head run_list;
-    struct list_head weight_list;
-    struct wrr_rq *wrr_runqueue;
-    struct task_struct *task;
 	int	time_slice;
-	int weight;
+	int    weight;
 };
 
 union rcu_special {
