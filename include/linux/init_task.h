@@ -251,9 +251,6 @@ extern struct cred init_cred;
 	},								\
     .wrr    = {                     \
         .run_list   = LIST_HEAD_INIT(tsk.wrr.run_list), \
-        .weight_list = LIST_HEAD_INIT(tsk.wrr.weight_list), \
-        .wrr_runqueue = NULL,       \
-        .task = &tsk,               \
         .weight = 10,               \
 	    .time_slice = 10 * WRR_TIMESLICE, \
     },                              \
