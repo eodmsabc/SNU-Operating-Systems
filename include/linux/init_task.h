@@ -253,6 +253,7 @@ extern struct cred init_cred;
         .run_list   = LIST_HEAD_INIT(tsk.wrr.run_list), \
         .weight = 10,               \
 	    .time_slice = 10 * WRR_TIMESLICE, \
+        .on_rq = 0,               \
     },                              \
 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
 	INIT_PUSHABLE_TASKS(tsk)					\

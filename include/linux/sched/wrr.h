@@ -3,7 +3,7 @@
 
 #include <linux/sched.h>
 
-#define WRR_TIMESLICE 1 //TODO
+#define WRR_TIMESLICE (10 * HZ / 100) //TODO
 #define WRR_MINWEIGHT 1
 #define WRR_MAXWEIGHT 20
 #define WEIGHT_INITIALVALUE -1

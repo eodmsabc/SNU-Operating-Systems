@@ -537,6 +537,8 @@ struct sched_dl_entity {
 /* wrr entity. see other entities */
 struct sched_wrr_entity {
 	struct list_head run_list;
+
+    int on_rq; // if queued in wrr_rq, set 1 else set zero.
 	int	time_slice;
 	int    weight;
 };

@@ -23,6 +23,9 @@ static unsigned long last_loadbalance_time; // value that saves last_loadbalance
 //this is static long value so it is initialized by 0.
 // this value used at trigger_loadbalance.
 
+static struct rq *find_lowest_weight_rq(void);
+
+
 void init_wrr_rq(struct wrr_rq *wrr_rq)
 {
     int cpu;
@@ -53,20 +56,12 @@ static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_e
 	return container_of(wrr_entity, struct task_struct, wrr); 
 }
 
+/*
 static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
 {
     return container_of(wrr_rq , struct rq, wrr);
 }
-
-// if current entry is equal runqueue's head, just get next entry.
-static struct list_head *get_valid_entry_of_wrr_entity(struct list_head *entry_of_wrr_entity, struct list_head *runqueue_of_wrr_rq)
-{
-    if(entry_of_wrr_entity == runqueue_of_wrr_rq)
-    {
-        entry_of_wrr_entity = entry_of_wrr_entity->next;
-    }
-    return entry_of_wrr_entity;
-}
+*/
 
 
 /* this function update max&min weight of wrr queue. need locking. */
@@ -187,45 +182,42 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct sched_wrr_entity *wrr_entity;
     struct list_head *wrr_rq_queue;
     struct list_head *wrr_entity_run_list;
+    int lowest_weight;
     int weight;
+    int queue_weight = rq->wrr.weight_sum;
     
     rcu_read_lock();
     lowest_rq = find_lowest_weight_rq();
     rcu_read_unlock();
 
-    if(lowest_rq == NULL)  // if lowest_weight_rq is not here
-    {
-        wrr_rq = &(rq->wrr);
-    }
-    else if(lowest_rq != rq)   // if lowest_weight_rq is not equal to current rq, migrate task.
-    {
-        deactivate_task(rq, p, 0);
-        set_task_cpu(p, lowest_rq->cpu);
-        activate_task(lowest_rq, next_task, 0);
-        resched_curr(rq);
-        wrr_rq = &(lowest_rq->wrr);
-    }
-    else
-    {
-        wrr_rq = &(rq->wrr);
-    }
-
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-
+    wrr_rq = &(rq->wrr);
     wrr_entity = &(p->wrr);
     weight = wrr_entity->weight;
 
-    wrr_rq_queue = &(wrr_rq->queue);
-    wrr_entity_run_list = &(wrr_entity->run_list);
-    // list values initialize.
+    if(lowest_rq && (queue_weight > (lowest_rq->wrr.weight_sum)))  //if lowest rq is not null, and weight of lowest rq is bigger than current, migrate task to lowest queue.
+    {
+        raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
+        if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
+        set_task_cpu(p, lowest_rq->cpu);
+        activate_task(lowest_rq, p, 0);
+        
+        resched_curr(lowest_rq);
+        raw_spin_unlock(&(lowest_rq->lock));
+    }
+    else
+    {
+        wrr_rq_queue = &(wrr_rq->queue);
+        wrr_entity_run_list = &(wrr_entity->run_list);
+        // list values initialize.
 
-    list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-    // add wrr_entity to runqueue
+        list_add_tail(wrr_entity_run_list, wrr_rq_queue);
+        // add wrr_entity to runqueue
 
-    wrr_rq->weight_sum += weight;
-    p->on_rq = 1;
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+        wrr_rq->weight_sum += weight;
+        wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+        wrr_entity->on_rq = 1;
+    }
+    
 }
 
 static void
@@ -238,7 +230,6 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     int weight;
     
     wrr_rq = &(rq->wrr);
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
     wrr_entity = &(p->wrr);
     weight = wrr_entity->weight;
@@ -251,9 +242,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     list_del_init(wrr_entity_run_list);
 
     wrr_rq->weight_sum -= weight;
-    p->on_rq = 0;
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+    wrr_entity->on_rq = 0;
 }
 
 /* need to update entity AFTER requeue. */  
@@ -267,15 +256,11 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
 
     wrr_rq = &(rq->wrr);
 
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-    
     wrr_se = &(p->wrr);
 
     list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
     wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
 static void yield_task_wrr(struct rq *rq)
@@ -343,7 +328,6 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     struct wrr_rq *wrr_rq;
     struct task_struct *curr;
     struct sched_wrr_entity *wrr_entity;
-    struct list_head *wrr_rq_queue;
     struct list_head *wrr_entity_run_list;
 
     wrr_rq = &(rq->wrr);
@@ -367,6 +351,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     }
     else
     {
+        wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
         requeue_task_wrr(rq, curr);
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         // should we use set_tsk_need_resched(p)?
@@ -517,7 +502,6 @@ void trigger_load_balance_wrr(struct rq *rq)
     int weight_highest;
     int weight_lowest;
     int curr_weight;
-    int i;
     int mig_weight = 0;
 
     struct sched_wrr_entity *curr_entity;
@@ -558,7 +542,7 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     mig_weight = 0;
     migrated_task = NULL;
-    wrr_rq_runqueue = wrr_rq_highest_weight->queue;
+    wrr_rq_runqueue = &(wrr_rq_highest_weight->queue);
 
     // now find candidate for migration.
     list_for_each_entry(curr_entity, wrr_rq_runqueue, run_list)
@@ -568,7 +552,7 @@ void trigger_load_balance_wrr(struct rq *rq)
 
         if(is_migration_available(rq_highest_weight, rq_lowest_weight, current_task) && (mig_weight < curr_weight))
         {
-            mig_wegiht = curr_weight;
+            mig_weight = curr_weight;
             migrated_task = current_task;
         }
     }

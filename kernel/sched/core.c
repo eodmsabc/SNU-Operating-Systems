@@ -4057,9 +4057,9 @@ static int __sched_setscheduler(struct task_struct *p,
     
     if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
     {
-        struct cpumask *zerocpu_mask = (cpumask_of(0));
+        const struct cpumask *zerocpu_mask = (cpumask_of(0));
         struct cpumask mask;
-        if(cpumask_andnot(&mask, p->cpus_allowed, zerocpu_mask) == 0) return -EPERM;
+        if(cpumask_andnot(&mask, &(p->cpus_allowed), zerocpu_mask) == 0) return -EPERM;
     }
     
 
@@ -4218,9 +4218,9 @@ change:
 	}
 
 	/* Re-check policy now with rq lock held: */
-	if (unlikely(oldpolicy != -1 &&__sched_setschedulercy)) {
+	if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
 		policy = oldpolicy = -1;
-		task_rq_unlock(rq, p, &rf);__sched_setscheduler
+		task_rq_unlock(rq, p, &rf);
 		goto recheck;
 	}
 
