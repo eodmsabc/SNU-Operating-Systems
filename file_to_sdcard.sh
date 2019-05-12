@@ -36,7 +36,7 @@ copypos+='/root'
 echo "mounting.."
 mount "$2" "$3" || { echo "mount failure!"; exit 1; }
 echo "copy folder/file to sdcard"
-cp -R "$1" "$copypos" || { echo "copy failed!"; exit 1; }
+cp -Rf "$1" "$copypos" || { echo "copy failed!"; exit 1; }
 echo "unmounting.."
 umount "$3" || { echo "umount failure!"; exit 1; }
 

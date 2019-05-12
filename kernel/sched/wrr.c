@@ -344,6 +344,8 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     curr = rq->curr;
     wrr_entity = &(curr->wrr);
     wrr_entity_run_list = &(wrr_entity->run_list);
+    
+    //printk(KERN_ALERT"task_tick_wrr_called %d\n",wrr_entity->time_slice);
 
     if(--(wrr_entity->time_slice) > 0)  // if current task time_slice is not zero.. don't need to re_schedule.
     {
@@ -351,10 +353,13 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     }
     else
     {
+        //printk(KERN_ALERT"before requeue %d\n",wrr_entity->time_slice);
         wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
         requeue_task_wrr(rq, curr);
+        //printk(KERN_ALERT"after requeue %d\n",wrr_entity->time_slice);
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         // should we use set_tsk_need_resched(p)?
+        //printk(KERN_ALERT"after resched %d\n",wrr_entity->time_slice);
     }
     return;
 }
