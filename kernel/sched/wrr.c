@@ -30,7 +30,6 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     INIT_LIST_HEAD(&(wrr_rq->queue));
     
     wrr_rq->weight_sum = 0;
-    wrr_rq->curr = NULL;
 
     /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
 
@@ -52,6 +51,11 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_entity)
 {
 	return container_of(wrr_entity, struct task_struct, wrr); 
+}
+
+static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
+{
+    return container_of(wrr_rq , struct rq, wrr);
 }
 
 // if current entry is equal runqueue's head, just get next entry.
@@ -178,15 +182,33 @@ void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
 static void
 enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 {
+    struct rq *lowest_rq;
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_entity;
-    struct sched_wrr_entity *curr_wrr_entity;
     struct list_head *wrr_rq_queue;
     struct list_head *wrr_entity_run_list;
-    struct list_head *curr_wrr_entity_run_list;
     int weight;
     
-    wrr_rq = &(rq->wrr);
+    rcu_read_lock();
+    lowest_rq = find_lowest_weight_rq();
+    rcu_read_unlock();
+
+    if(lowest_rq == NULL)  // if lowest_weight_rq is not here
+    {
+        wrr_rq = &(rq->wrr);
+    }
+    else if(lowest_rq != rq)   // if lowest_weight_rq is not equal to current rq, migrate task.
+    {
+        deactivate_task(rq, p, 0);
+        set_task_cpu(p, lowest_rq->cpu);
+        activate_task(lowest_rq, next_task, 0);
+        resched_curr(rq);
+        wrr_rq = &(lowest_rq->wrr);
+    }
+    else
+    {
+        wrr_rq = &(rq->wrr);
+    }
 
     raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
 
@@ -197,26 +219,12 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_entity_run_list = &(wrr_entity->run_list);
     // list values initialize.
 
-    if(wrr_rq->curr == NULL)
-    {
-        // If the current runqueue is empty,
-		// set current task to the new task
-        wrr_rq->curr = p;
-        list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-    }
-    else
-    {
-        // If the current runqueue is not empty,
-		// just add task to tail of the list.
-        curr_wrr_entity_run_list = &(wrr_rq->curr->wrr).run_list;
-
-        list_add_tail(wrr_entity_run_list, curr_wrr_entity_run_list);
-    }
+    list_add_tail(wrr_entity_run_list, wrr_rq_queue);
     // add wrr_entity to runqueue
 
     wrr_rq->weight_sum += weight;
-    p->on_rq = 1;    
-    
+    p->on_rq = 1;
+
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
@@ -227,7 +235,6 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct sched_wrr_entity *wrr_entity;
     struct list_head *wrr_rq_queue;
     struct list_head *wrr_entity_run_list;
-    struct list_head *next_wrr_entity_run_list;
     int weight;
     
     wrr_rq = &(rq->wrr);
@@ -238,26 +245,10 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_entity_run_list = &(wrr_entity->run_list);
-    next_wrr_entity_run_list = wrr_entity_run_list->next;
 
     // list values initialize.
 
     list_del_init(wrr_entity_run_list);
-
-    if (list_empty(wrr_rq_queue))
-    {
-        // If run queue is empty, set current task to null
-        wrr_rq->curr = NULL;
-    }
-    else if(p == wrr_rq->curr)
-    {
-        // if deleted task is current task, update current task to next one.
-
-        next_wrr_entity_run_list = get_valid_entry_of_wrr_entity(next_wrr_entity_run_list, wrr_rq_queue);
-        // if list_head of wrr_entity is equal to wrr_rq_queue, just get next list_head.
-
-        wrr_rq->curr = get_task_of_wrr_entity(list_entry(next_wrr_entity_run_list, struct sched_wrr_entity, run_list));
-    }
 
     wrr_rq->weight_sum -= weight;
     p->on_rq = 0;
@@ -265,60 +256,43 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
-/* need to update entity AFTER requeue. */
+/* need to update entity AFTER requeue. */  
 // requeue current task. need locking.
 static void
-requeue_task_wrr(struct rq *rq)
+requeue_task_wrr(struct rq *rq, struct task_struct *p)
 {
     /* todo - many other things */
     struct wrr_rq *wrr_rq;
-    struct sched_wrr_entity *wrr_entity;
-    struct task_struct *curr; 
-    struct list_head *curr_entry_list;
-    struct list_head *next_entry_list;
+    struct sched_wrr_entity *wrr_se;
 
     wrr_rq = &(rq->wrr);
 
-    curr = wrr_rq->curr;
+    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+    
+    wrr_se = &(p->wrr);
 
-    if(curr == NULL) return;    // if wrr_runqueue is empty..
+    list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
 
-    wrr_entity = &(curr->wrr);
-    curr_entry_list = &(wrr_entity->run_list);
-    next_entry_list = curr_entry_list->next;
+    wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
 
-    if(curr_entry_list != (next_entry_list->next)) // if only task is current task, current_task -> next -> next is current_task.
-    {
-        // if queue has more than 1 task, update curr
-        next_entry_list = get_valid_entry_of_wrr_entity(next_entry_list, &(wrr_rq->queue));
-        curr = get_task_of_wrr_entity(list_entry(next_entry_list, struct sched_wrr_entity, run_list));
-    }
-
-    wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
 }
 
 static void yield_task_wrr(struct rq *rq)
 {
-    struct wrr_rq *wrr_rq = &(rq->wrr);
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-    requeue_task_wrr(rq);
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+    requeue_task_wrr(rq, rq->curr);
 }
 
 static struct task_struct *
 pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-    struct task_struct *curr;
-
-    curr = (rq->wrr).curr;
-
-    if (curr != NULL)
-    {
-        curr->wrr.time_slice = curr->wrr.weight * WRR_TIMESLICE;
-        // time slice update for re_scheduling.
+    struct wrr_rq *wrr_rq = &(rq->wrr);
+    if(list_empty(&(wrr_rq->queue))) {
+        return NULL;
     }
-
-    return curr;
+    else {
+        return get_task_of_wrr_entity(list_first_entry(&(wrr_rq->queue), struct sched_wrr_entity, run_list));
+    }
 }
 
 static void put_prev_task_wrr(struct rq *rq, struct task_struct *p)
@@ -364,7 +338,7 @@ check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int flags)
 
 /* scheduler_tick callback function */
 /* called by timer. */
-static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
+static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // TODO rev
 {
     struct wrr_rq *wrr_rq;
     struct task_struct *curr;
@@ -383,24 +357,20 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued)
         return;
     }
 
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-
-    curr = wrr_rq->curr;
+    curr = rq->curr;
     wrr_entity = &(curr->wrr);
     wrr_entity_run_list = &(wrr_entity->run_list);
 
     if(--(wrr_entity->time_slice) > 0)  // if current task time_slice is not zero.. don't need to re_schedule.
     {
-        raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
         return;
     }
     else
     {
-        requeue_task_wrr(rq);
-        set_tsk_need_resched(curr); // TODO : is this ok for when holding lock, resched_curr is correct?
+        requeue_task_wrr(rq, curr);
+        resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         // should we use set_tsk_need_resched(p)?
     }
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
     return;
 }
 
@@ -465,6 +435,10 @@ static struct rq *find_lowest_weight_rq(void)
 
     return lowest_rq;
 }
+
+
+
+
 
 // return value NULL mean that there is no cpu to migration. need RCU lock.
 static struct rq *find_highest_weight_rq(void)
@@ -542,7 +516,6 @@ void trigger_load_balance_wrr(struct rq *rq)
     unsigned long current_time;
     int weight_highest;
     int weight_lowest;
-    int weight_diff;
     int curr_weight;
     int i;
     int mig_weight = 0;
@@ -582,17 +555,6 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     weight_highest = wrr_rq_highest_weight->weight_sum;
     weight_lowest = wrr_rq_lowest_weight->weight_sum;
-    minweight_highest = wrr_rq_highest_weight->min_weight;
-
-    weight_diff = weight_highest - weight_lowest;
-
-    if(weight_diff > WRR_MAXWEIGHT) weight_diff = WRR_MAXWEIGHT+1;
-    else if(weight_diff <= WRR_MINWEIGHT || weight_diff < minweight_highest)
-    {
-        // weight difference is lower than min weight, counldn't migrate.
-        double_rq_unlock(rq_highest_weight, rq_lowest_weight);
-        return;
-    }
 
     mig_weight = 0;
     migrated_task = NULL;
@@ -601,7 +563,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     // now find candidate for migration.
     list_for_each_entry(curr_entity, wrr_rq_runqueue, run_list)
     {
-        current_task = container_of(curr_entity, struct task_struct, wrr);
+        current_task = get_task_of_wrr_entity(curr_entity);
         curr_weight = (current_task->wrr).weight;
 
         if(is_migration_available(rq_highest_weight, rq_lowest_weight, current_task) && (mig_weight < curr_weight))
@@ -622,6 +584,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     deactivate_task(rq_highest_weight, migrated_task, 0);
     set_task_cpu(migrated_task, rq_lowest_weight->cpu);
     activate_task(rq_lowest_weight, migrated_task, 0);
+    resched_curr(rq_highest_weight);
 
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
 
@@ -673,11 +636,17 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
         rcu_read_lock();
         target = cpumask_any_but_online(&p->cpus_allowed, 0);
         rcu_read_unlock();
-        if (target == 0)
+        if(target >= nr_cpu_ids)
+        {
+            printk(KERN_ALERT"there is no cpu that task is allowed!\n");
+            target = cpumask_first(&(p->cpus_allowed));
+        }   // need to handle error
+        else if (target == 0)
         {
             printk(KERN_ALERT"task's only available cpu is cpu zero! this is not allowed!\n");
+            target = cpumask_first(&(p->cpus_allowed));
         }   // need to handle error
-        return cpumask_first(&(p->cpus_allowed));
+        return target;
     }
 
     rcu_read_lock();
@@ -693,7 +662,9 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
         if(target >= nr_cpu_ids)
         {
             printk(KERN_ALERT"there is no cpu that task is allowed!\n");
+            target = cpumask_first(&(p->cpus_allowed));
         }   // need to handle error
+        
     }
     return target;
 }

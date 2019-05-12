@@ -4015,6 +4015,30 @@ static bool check_same_owner(struct task_struct *p)
 }
 
 
+/*
+ * cpumask_andnot - *dstp = *src1p & ~*src2p
+ * @dstp: the cpumask result
+ * @src1p: the first input
+ * @src2p: the second input
+ *
+ * If *@dstp is empty, returns 0, else returns 1
+ */
+
+// migrate task to other cpu.
+/*
+static int wrr_setaffinity_and_migrate(struct task_struct *p)
+{
+    struct cpumask *zerocpu_mask = (cpumask_of(0));
+    struct cpumask p_mask; 
+    struct cpumask mask;
+
+    if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+    if(cpumask_andnot(&mask, &p_mask, zerocpu_mask) == 0) return -1; // if there is no cpu to run..
+    return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+}
+*/
+
+
 /* TODO add wrr */
 static int __sched_setscheduler(struct task_struct *p,
 				const struct sched_attr *attr,
@@ -4029,6 +4053,15 @@ static int __sched_setscheduler(struct task_struct *p,
 	int reset_on_fork;
 	int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
 	struct rq *rq;
+
+    
+    if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
+    {
+        struct cpumask *zerocpu_mask = (cpumask_of(0));
+        struct cpumask mask;
+        if(cpumask_andnot(&mask, p->cpus_allowed, zerocpu_mask) == 0) return -EPERM;
+    }
+    
 
 	/* The pi code expects interrupts enabled */
 	BUG_ON(pi && in_interrupt());
@@ -4185,9 +4218,9 @@ change:
 	}
 
 	/* Re-check policy now with rq lock held: */
-	if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
+	if (unlikely(oldpolicy != -1 &&__sched_setschedulercy)) {
 		policy = oldpolicy = -1;
-		task_rq_unlock(rq, p, &rf);
+		task_rq_unlock(rq, p, &rf);__sched_setscheduler
 		goto recheck;
 	}
 

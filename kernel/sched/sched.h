@@ -610,7 +610,6 @@ struct dl_rq {
 /* wrr rq */
 struct wrr_rq {
     struct list_head queue;
-    struct task_struct *curr;
 
     int usable; // if this value is zero, cpu doesn't use wrr_scheduling.
     int weight_sum;
