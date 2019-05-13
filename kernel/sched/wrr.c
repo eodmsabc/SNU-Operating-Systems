@@ -34,7 +34,7 @@ static void print_errmsg(const char * str, struct rq *rq)
 
     if(rq != NULL) runqueue_cpu = rq->cpu;
 
-    printk(KERN_ALERT"%s, in running_cpu %d, in runqueue_cpu %d\n",str,cpu, runqueue_cpu);
+    printk(KERN_ALERT"%s, in running_cpu %d, in runqueue_cpu %d\n",str, running_cpu, runqueue_cpu);
 }
 
 
