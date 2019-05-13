@@ -56,6 +56,8 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
     else {
         wrr_rq->usable = 1;
     }
+
+    print_errmsg("initialize_wrr_rq",rq);
     
     raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
 }
