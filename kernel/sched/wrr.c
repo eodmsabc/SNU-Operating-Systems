@@ -38,14 +38,12 @@ void init_wrr_rq(struct wrr_rq *wrr_rq)
 
     cpu = get_cpu();
     put_cpu();
-    if (cpu == 0) {
+    if (cpu == WRR_NO_USE_CPU_NUM) {
         wrr_rq->usable = 0;
     }
     else {
         wrr_rq->usable = 1;
     }
-
-    wrr_rq->usable = 1;
     
     raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
 }
@@ -193,8 +191,9 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_rq = &(rq->wrr);
     wrr_entity = &(p->wrr);
     weight = wrr_entity->weight;
+    lowest_weight = lowest_rq->wrr.weight_sum;
 
-    if(lowest_rq && (queue_weight > (lowest_rq->wrr.weight_sum)))  //if lowest rq is not null, and weight of lowest rq is bigger than current, migrate task to lowest queue.
+    if(lowest_rq && ((wrr_rq->usable == 0) || (queue_weight > lowest_weight) ))  //if lowest rq is not null, and weight of lowest rq is bigger than current, migrate task to lowest queue.
     {
         raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
         if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
@@ -253,12 +252,17 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
     /* todo - many other things */
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
+    struct list_head *wrr_entity_run_list;
 
     wrr_rq = &(rq->wrr);
 
+    if(p == NULL) return;
+    if(p->policy != SCHED_WRR) return;
     wrr_se = &(p->wrr);
+    wrr_entity_run_list = &(wrr_se->run_list);
 
-    list_move_tail(&(wrr_se->run_list), &(wrr_rq->queue));
+    list_del_init(wrr_entity_run_list);
+    list_add_tail(wrr_entity_run_list, &(wrr_rq->queue));
 
     wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
 }
@@ -266,6 +270,11 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
 static void yield_task_wrr(struct rq *rq)
 {
     requeue_task_wrr(rq, rq->curr);
+}
+
+static bool yield_to_task_wrr(struct rq *rq, struct task_struct *p, bool preempt)
+{
+	return true;
 }
 
 static struct task_struct *
@@ -534,7 +543,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     // can't find runqueue to migrate.  
     // (1 cpu exist or there is no usable cpu. only cpu wrr_rq->usable is 0)
 
-    if(rq_highest_weight == rq_lowest_weight) return;
+    if(rq_highest_weight->wrr.weight_sum == rq_lowest_weight->wrr.weight_sum) return;
     // 1 cpu exist case
 
     double_rq_lock(rq_highest_weight, rq_lowest_weight);
@@ -573,7 +582,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     deactivate_task(rq_highest_weight, migrated_task, 0);
     set_task_cpu(migrated_task, rq_lowest_weight->cpu);
     activate_task(rq_lowest_weight, migrated_task, 0);
-    resched_curr(rq_highest_weight);
+    resched_curr(rq_lowest_weight);
 
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
 
@@ -623,14 +632,14 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 
     if(p->nr_cpus_allowed == 1) {
         rcu_read_lock();
-        target = cpumask_any_but_online(&p->cpus_allowed, 0);
+        target = cpumask_any_but_online(&p->cpus_allowed, WRR_NO_USE_CPU_NUM);
         rcu_read_unlock();
         if(target >= nr_cpu_ids)
         {
             printk(KERN_ALERT"there is no cpu that task is allowed!\n");
             target = cpumask_first(&(p->cpus_allowed));
         }   // need to handle error
-        else if (target == 0)
+        else if (target == WRR_NO_USE_CPU_NUM)
         {
             printk(KERN_ALERT"task's only available cpu is cpu zero! this is not allowed!\n");
             target = cpumask_first(&(p->cpus_allowed));
@@ -646,7 +655,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 
     if (cpumask_test_cpu(target, &p->cpus_allowed) == 0) {  // if task coudln't assign to target, just get random task
         rcu_read_lock();
-        target = cpumask_any_but_online(&p->cpus_allowed, 0);
+        target = cpumask_any_but_online(&p->cpus_allowed, WRR_NO_USE_CPU_NUM);
         rcu_read_unlock();
         if(target >= nr_cpu_ids)
         {
@@ -684,6 +693,7 @@ const struct sched_class wrr_sched_class = {
     .enqueue_task       = enqueue_task_wrr,
     .dequeue_task       = dequeue_task_wrr,
     .yield_task         = yield_task_wrr,
+    .yield_to_task = yield_to_task_wrr,
     .check_preempt_curr = check_preempt_curr_wrr,
     .pick_next_task     = pick_next_task_wrr,
     .put_prev_task      = put_prev_task_wrr,

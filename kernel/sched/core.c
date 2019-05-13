@@ -2243,7 +2243,7 @@ void set_numabalancing_state(bool enabled)
 }
 
 #ifdef CONFIG_PROC_SYSCTL
-int sysctl_numa_balancing(struct ctl_table *table, int crite,
+int sysctl_numa_balancing(struct ctl_table *table, int write,
 			 void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table t;
@@ -3755,6 +3755,8 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
         else p->sched_class = &fair_sched_class;
     }
 
+    
+
 
 	p->prio = prio;
 
@@ -4025,19 +4027,19 @@ static bool check_same_owner(struct task_struct *p)
  */
 
 // migrate task to other cpu.
+
 /*
 static int wrr_setaffinity_and_migrate(struct task_struct *p)
 {
-    struct cpumask *zerocpu_mask = (cpumask_of(0));
+    const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
     struct cpumask p_mask; 
     struct cpumask mask;
 
     if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
-    if(cpumask_andnot(&mask, &p_mask, zerocpu_mask) == 0) return -1; // if there is no cpu to run..
+    if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
     return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
 }
 */
-
 
 /* TODO add wrr */
 static int __sched_setscheduler(struct task_struct *p,
@@ -4057,11 +4059,12 @@ static int __sched_setscheduler(struct task_struct *p,
     
     if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
     {
-        const struct cpumask *zerocpu_mask = (cpumask_of(0));
+        //if(wrr_setaffinity_and_migrate(p) != 0) return -EPERM;
+        
+        const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
         struct cpumask mask;
-        if(cpumask_andnot(&mask, &(p->cpus_allowed), zerocpu_mask) == 0) return -EPERM;
+        if(cpumask_andnot(&mask, &(p->cpus_allowed), no_use_cpu_mask) == 0) return -EPERM;
     }
-    
 
 	/* The pi code expects interrupts enabled */
 	BUG_ON(pi && in_interrupt());
