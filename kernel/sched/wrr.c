@@ -25,6 +25,14 @@ static unsigned long last_loadbalance_time; // value that saves last_loadbalance
 
 static struct rq *find_lowest_weight_rq(void);
 
+static void print_errmsg(const char * str)
+{
+    int cpu;
+    cpu = get_cpu();
+    put_cpu();
+    printk(KERN_ALERT"%s, in cpu %d\n",str,cpu);
+}
+
 
 void init_wrr_rq(struct wrr_rq *wrr_rq)
 {
@@ -184,6 +192,8 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     int weight;
     int queue_weight = rq->wrr.weight_sum;
     
+    print_errmsg("enqueue start");
+
     rcu_read_lock();
     lowest_rq = find_lowest_weight_rq();
     rcu_read_unlock();
@@ -195,6 +205,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     if(lowest_rq && ((wrr_rq->usable == 0) || (queue_weight > lowest_weight) ))  //if lowest rq is not null, and weight of lowest rq is bigger than current, migrate task to lowest queue.
     {
+        print_errmsg("enqueue in first if");
         raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
         if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
         set_task_cpu(p, lowest_rq->cpu);
@@ -205,6 +216,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     }
     else
     {
+        print_errmsg("enqueue in second if");
         wrr_rq_queue = &(wrr_rq->queue);
         wrr_entity_run_list = &(wrr_entity->run_list);
         // list values initialize.
@@ -216,6 +228,8 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
         wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
         wrr_entity->on_rq = 1;
     }
+
+    print_errmsg("enqueue end");
     
 }
 
@@ -228,6 +242,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_entity_run_list;
     int weight;
     
+    print_errmsg("dequeue start");
     wrr_rq = &(rq->wrr);
 
     wrr_entity = &(p->wrr);
@@ -242,6 +257,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     wrr_rq->weight_sum -= weight;
     wrr_entity->on_rq = 0;
+    print_errmsg("enqueue end");
 }
 
 /* need to update entity AFTER requeue. */  
@@ -265,6 +281,7 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
     list_add_tail(wrr_entity_run_list, &(wrr_rq->queue));
 
     wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
+    print_errmsg("requeue end");
 }
 
 static void yield_task_wrr(struct rq *rq)
@@ -308,6 +325,7 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
     wrr_entity = &(p->wrr);
     wrr_entity->weight = 10;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+    print_errmsg("switch end");
 }
 
 static void
@@ -362,11 +380,14 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     }
     else
     {
+        print_errmsg("task_tick_wrr in else");
         //printk(KERN_ALERT"before requeue %d\n",wrr_entity->time_slice);
         wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
         requeue_task_wrr(rq, curr);
+        print_errmsg("task_tick_wrr after requeue");
         //printk(KERN_ALERT"after requeue %d\n",wrr_entity->time_slice);
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
+        print_errmsg("task_tick_wrr after resched");
         // should we use set_tsk_need_resched(p)?
         //printk(KERN_ALERT"after resched %d\n",wrr_entity->time_slice);
     }
@@ -533,6 +554,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     last_loadbalance_time = current_time;
     spin_unlock(&wrr_loadbalance_lock);
 
+    print_errmsg("loadbalance after time check");
     rcu_read_lock();
     rq_highest_weight = find_highest_weight_rq();
     rq_lowest_weight = find_lowest_weight_rq();
@@ -593,6 +615,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         load balancing failed. return */
     /*     else then */
     /*         migrate task */
+    print_errmsg("loadbalance end");
 }
 
 /**
@@ -625,6 +648,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     struct rq *target_rq;
     int target;
 
+    print_errmsg("select_task start");
 	/* For anything but wake ups, just return the task_cpu */
 	if (sd_flag != SD_BALANCE_WAKE && sd_flag != SD_BALANCE_FORK) {
         return cpu;
@@ -665,6 +689,8 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
         
     }
     return target;
+
+    print_errmsg("select_task end");
 }
 
 static void task_woken_wrr(struct rq *rq, struct task_struct *p)
