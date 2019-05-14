@@ -3739,22 +3739,23 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
             queue_flag |= ENQUEUE_REPLENISH;
         } else
             p->dl.dl_boosted = 0;
-        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
-        else p->sched_class = &dl_sched_class;
+        p->sched_class = &dl_sched_class;
     } else if (rt_prio(prio)) {
         if (dl_prio(oldprio))
             p->dl.dl_boosted = 0;
         if (oldprio < prio)
             queue_flag |= ENQUEUE_HEAD;
-        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
-        else p->sched_class = &rt_sched_class;
+        p->sched_class = &rt_sched_class;
+    } else if (p->policy == SCHED_WRR) {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        p->sched_class = &wrr_sched_class;
     } else {
         if (dl_prio(oldprio))
             p->dl.dl_boosted = 0;
         if (rt_prio(oldprio))
             p->rt.timeout = 0;
-        if(p->policy == SCHED_WRR) p->sched_class = &wrr_sched_class;
-        else p->sched_class = &fair_sched_class;
+        p->sched_class = &fair_sched_class;
     }
 
     
@@ -4165,8 +4166,8 @@ recheck:
 		~(SCHED_FLAG_RESET_ON_FORK | SCHED_FLAG_RECLAIM))
 		return -EINVAL;
 
-	/*
-	 * Valid priorities for SCHED_FIFO and SCHED_RR are
+	/*sudo screen -L /dev/ttyUSB0 115200 
+	 *sudo screen -L /dev/ttyUSB0 115200 nd SCHED_RR are
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
 	 * SCHED_BATCH and SCHED_IDLE is 0.
 	 */
