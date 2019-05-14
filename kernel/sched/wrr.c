@@ -38,18 +38,13 @@ static void print_errmsg(const char * str, struct rq *rq)
 }
 
 
-void init_wrr_rq(struct wrr_rq *wrr_rq)
+void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
 {
-    int cpu;
-    struct rq *rq = container_of(wrr_rq, struct rq, wrr);
 
     INIT_LIST_HEAD(&(wrr_rq->queue));
     
     wrr_rq->weight_sum = 0;
 
-    /* TODO.. by CPU number, we shouldn't use wrr_rq. may cpu number is should zero.. */
-
-    cpu = rq->cpu;
     if (cpu == WRR_NO_USE_CPU_NUM) {
         wrr_rq->usable = 0;
     }
@@ -75,114 +70,106 @@ static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
 }
 */
 
-
-/* this function update max&min weight of wrr queue. need locking. */
-/*
-static void
-update_minmax_weight_wrr(struct wrr_rq *wrr_rq)
+// return value NULL mean that there is no cpu to migration. need RCU lock.
+// find lowest weight rq. if argument is NULL, get lowest weight rq in online cpu.
+// if argument is setted, then return only lowest rq that p could align.
+static struct rq *find_lowest_weight_rq(struct task_struct *p)
 {
-    int i;
-    int min_weight = WEIGHT_INITIALVALUE;
-    int max_weight = WEIGHT_INITIALVALUE;
-    struct list_head *weight_array = wrr_rq->weight_array;
+    int curr_cpu;
+    int curr_weight;
+    int lowest_weight;
+    struct rq *curr_rq;
+    struct rq *lowest_rq;
+    struct wrr_rq *curr_wrr_rq;
 
-    for(i = WRR_MINWEIGHT; i <= WRR_MAXWEIGHT; i++) 
+    lowest_rq = NULL; // not initialized..
+    lowest_weight = -1;
+
+    curr_cpu = -1;
+    for_each_online_cpu(curr_cpu)
     {
-        if(!list_empty(&(weight_array[i])))
+        if(p != NULL)
         {
-            min_weight = i;
-            break;
-        }
-    }      
-    // find min_weight
+            if(!cpumask_test_cpu(curr_cpu, &(p->cpus_allowed))) continue;
+        }  // if current cpu is not available for p, just skip.
 
-    for(i = WRR_MAXWEIGHT; i >= WRR_MINWEIGHT; i--) 
-    {
-        if(!list_empty(&(weight_array[i]))) 
+        if(curr_cpu == WRR_NO_USE_CPU_NUM) continue;
+        // if current cpu is NO USE CPU, just skip.
+
+        curr_rq = cpu_rq(curr_cpu);
+        curr_wrr_rq = &(curr_rq->wrr);
+        if(curr_wrr_rq->usable != 0) // if cpu is usable
         {
-            max_weight = i;
-            break;
+            curr_weight = curr_wrr_rq->weight_sum;
+            if(lowest_weight == -1) // not initialized..
+            {
+                lowest_rq = curr_rq;
+                lowest_weight = curr_weight;
+            }
+            else
+            {
+                if(lowest_weight > curr_weight)
+                {
+                    lowest_rq = curr_rq;
+                    lowest_weight = curr_weight;
+                }
+            }
         }
     }
-    // find max_weight
 
-    wrr_rq->min_weight = min_weight;
-    wrr_rq->max_weight = max_weight;
-    // set weight. if list is all empty, then set initial value.
+    return lowest_rq;
 }
-*/
 
-/* this function update wrr queue. modifies count, weight sum, min and max weight.
- when insert item. need locking. */
- /*
-static void
-update_insert_wrr(struct wrr_rq *wrr_rq, int weight)
+
+// return value NULL mean that there is no cpu to migration. need RCU lock.
+// find highest weight rq. if argument is NULL, get lowest weight rq in online cpu.
+// if argument is setted, then return only lowest rq that p could align.
+static struct rq *find_highest_weight_rq(struct task_struct *p)
 {
-    (wrr_rq->count)++;
-    (wrr_rq->weight_sum) += weight;
-    update_minmax_weight_wrr(wrr_rq);
-}
-*/
-/* this function update wrr queue. modifies count, weight sum, min and max weight.
- when delete item. need locking. */
- /*
-static void
-update_delete_wrr(struct wrr_rq *wrr_rq, int weight)
-{
-    (wrr_rq->count)--;
-    (wrr_rq->weight_sum) -= weight;
-    update_minmax_weight_wrr(wrr_rq);
-}
-*/
+    int curr_cpu;
+    int curr_weight;
+    int highest_weight;
+    struct rq *curr_rq;
+    struct rq *highest_rq;
+    struct wrr_rq *curr_wrr_rq;
+    
+    highest_rq = NULL;
+    highest_weight = -1; // not initialized..
 
-/* this function update new_weight to weight, and change wrr_rq's structure by then. need locking. */
-/*
-static void update_task_weight_wrr(struct wrr_rq *wrr_rq, struct task_struct *p, int new_weight)
-{
-    struct sched_wrr_entity *wrr_se;
-    int old_weight;
-
-    wrr_se = &(p->wrr);
-    old_weight = wrr_se->weight;
-
-    if(old_weight == new_weight) {  // no need to update wrr_entity.        
-        return;
-    }
-
-    wrr_se->weight = new_weight;
-
-    list_move_tail(&(wrr_se->weight_list), &(wrr_rq->weight_array[new_weight]));
-
-    wrr_rq->weight_sum += new_weight - old_weight;
-
-    update_minmax_weight_wrr(wrr_rq);
-}
-*/
-
-/* this function update new_weight to weight, and change wrr_rq's structure by then. */
-/*
-void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight)
-{
-    struct wrr_rq *wrr_rq;
-    struct sched_wrr_entity *wrr_se;
-
-    wrr_se = &(p->wrr);
-    wrr_rq = wrr_se->wrr_runqueue;
-
-    if(wrr_rq == NULL)
+    curr_cpu = -1;
+    for_each_online_cpu(curr_cpu)
     {
-        printk(KERN_ALERT" wrr_se doesn't have runqueue! \n");
-        return;
+        if(p != NULL)
+        {
+            if(!cpumask_test_cpu(curr_cpu, &(p->cpus_allowed))) continue;
+        }  // if current cpu is not available for p, just skip.
+
+        if(curr_cpu == WRR_NO_USE_CPU_NUM) continue;
+        // if current cpu is NO USE CPU, just skip.
+
+        curr_rq = cpu_rq(curr_cpu);
+        curr_wrr_rq = &(curr_rq->wrr);
+        if(curr_wrr_rq->usable != 0) // if cpu is usable
+        {
+            curr_weight = curr_wrr_rq->weight_sum;
+            if(highest_weight == -1)
+            {
+                highest_rq = curr_rq;
+                highest_weight = curr_weight;
+            }
+            else
+            {
+                if(highest_weight < curr_weight)
+                {
+                    highest_rq = curr_rq;
+                    highest_weight = curr_weight;
+                }
+            }
+        }
     }
 
-    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
-
-    update_task_weight_wrr(wrr_rq, p, new_weight);
-
-    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+    return highest_rq;
 }
-*/
-
 
 /* enqueue, dequeue, requeue */
 /* assume for now that the entity p->wrr is populated */
@@ -201,7 +188,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     print_errmsg("enqueue start", rq);
 
     rcu_read_lock();
-    lowest_rq = find_lowest_weight_rq();
+    lowest_rq = find_lowest_weight_rq(p);   // get lowest rq task p runnable.
     rcu_read_unlock();
 
     wrr_rq = &(rq->wrr);
@@ -209,30 +196,52 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     weight = wrr_entity->weight;
     lowest_weight = lowest_rq->wrr.weight_sum;
 
-    if(lowest_rq && ((wrr_rq->usable == 0) || (queue_weight > lowest_weight) ))  //if lowest rq is not null, and weight of lowest rq is bigger than current, migrate task to lowest queue.
+    if(rq->usable == 0) // must enqueue other queue
     {
-        print_errmsg("enqueue in first if", rq);
-        raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
-        if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
-        set_task_cpu(p, lowest_rq->cpu);
-        activate_task(lowest_rq, p, 0);
-        
-        resched_curr(lowest_rq);
-        raw_spin_unlock(&(lowest_rq->lock));
+        if(lowest_rq == NULL) //must raise kernel panic
+        {
+            print_errmsg("critical error!!!! kernel corrupted!", rq);
+            return;
+        }
+        else
+        {
+            print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
+            raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
+            if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
+            set_task_cpu(p, cpu_of(lowest_rq));
+            activate_task(lowest_rq, p, 0);
+            
+            resched_curr(lowest_rq);
+            raw_spin_unlock(&(lowest_rq->lock));
+        }
     }
     else
     {
-        print_errmsg("enqueue in second if", rq);
-        wrr_rq_queue = &(wrr_rq->queue);
-        wrr_entity_run_list = &(wrr_entity->run_list);
-        // list values initialize.
+        if(lowest_rq && ((lowest_weight < wrr_rq->weight_sum)) // enqueue lowest queue.
+        {
+            print_errmsg("enqueue to other cpu", rq);
+            raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
+            if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
+            set_task_cpu(p, cpu_of(lowest_rq));
+            activate_task(lowest_rq, p, 0);
+            
+            resched_curr(lowest_rq);
+            raw_spin_unlock(&(lowest_rq->lock));
+        }
+        else // enqueue this queue.
+        {
+            print_errmsg("enqueue in this cpu", rq);
+            wrr_rq_queue = &(wrr_rq->queue);
+            wrr_entity_run_list = &(wrr_entity->run_list);
+            // list values initialize.
 
-        list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-        // add wrr_entity to runqueue
+            list_add_tail(wrr_entity_run_list, wrr_rq_queue);
+            // add wrr_entity to runqueue
 
-        wrr_rq->weight_sum += weight;
-        wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
-        wrr_entity->on_rq = 1;
+            wrr_rq->weight_sum += weight;
+            wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+            wrr_entity->on_rq = 1;
+        }
     }
 
     print_errmsg("enqueue end", rq);
@@ -267,7 +276,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 }
 
 /* need to update entity AFTER requeue. */  
-// requeue current task. need locking.
+// requeue current task.
 static void
 requeue_task_wrr(struct rq *rq, struct task_struct *p)
 {
@@ -378,8 +387,6 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     wrr_entity = &(curr->wrr);
     wrr_entity_run_list = &(wrr_entity->run_list);
     
-    //printk(KERN_ALERT"task_tick_wrr_called %d\n",wrr_entity->time_slice);
-
     if(--(wrr_entity->time_slice) > 0)  // if current task time_slice is not zero.. don't need to re_schedule.
     {
         return;
@@ -387,15 +394,15 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     else
     {
         print_errmsg("task_tick_wrr in else", rq);
-        //printk(KERN_ALERT"before requeue %d\n",wrr_entity->time_slice);
-        wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+
         requeue_task_wrr(rq, curr);
+
         print_errmsg("task_tick_wrr after requeue", rq);
-        //printk(KERN_ALERT"after requeue %d\n",wrr_entity->time_slice);
+
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
+        
         print_errmsg("task_tick_wrr after resched", rq);
         // should we use set_tsk_need_resched(p)?
-        //printk(KERN_ALERT"after resched %d\n",wrr_entity->time_slice);
     }
     return;
 }
@@ -422,89 +429,7 @@ static void task_dead_wrr(struct task_struct *p)
     return;
 }
 
-// return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct rq *find_lowest_weight_rq(void)
-{
-    int curr_cpu;
-    int curr_weight;
-    int lowest_weight;
-    struct rq *curr_rq;
-    struct rq *lowest_rq;
-    struct wrr_rq *curr_wrr_rq;
 
-    lowest_rq = NULL; // not initialized..
-    lowest_weight = -1;
-
-    curr_cpu = -1;
-    for_each_online_cpu(curr_cpu)
-    {
-        curr_rq = cpu_rq(curr_cpu);
-        curr_wrr_rq = &(curr_rq->wrr);
-        if(curr_wrr_rq->usable != 0) // if cpu is usable
-        {
-            curr_weight = curr_wrr_rq->weight_sum;
-            if(lowest_weight == -1) // not initialized..
-            {
-                lowest_rq = curr_rq;
-                lowest_weight = curr_weight;
-            }
-            else
-            {
-                if(lowest_weight > curr_weight)
-                {
-                    lowest_rq = curr_rq;
-                    lowest_weight = curr_weight;
-                }
-            }
-        }
-    }
-
-    return lowest_rq;
-}
-
-
-
-
-
-// return value NULL mean that there is no cpu to migration. need RCU lock.
-static struct rq *find_highest_weight_rq(void)
-{
-    int curr_cpu;
-    int curr_weight;
-    int highest_weight;
-    struct rq *curr_rq;
-    struct rq *highest_rq;
-    struct wrr_rq *curr_wrr_rq;
-    
-    highest_rq = NULL;
-    highest_weight = -1; // not initialized..
-
-    curr_cpu = -1;
-    for_each_online_cpu(curr_cpu)
-    {
-        curr_rq = cpu_rq(curr_cpu);
-        curr_wrr_rq = &(curr_rq->wrr);
-        if(curr_wrr_rq->usable != 0) // if cpu is usable
-        {
-            curr_weight = curr_wrr_rq->weight_sum;
-            if(highest_weight == -1)
-            {
-                highest_rq = curr_rq;
-                highest_weight = curr_weight;
-            }
-            else
-            {
-                if(highest_weight < curr_weight)
-                {
-                    highest_rq = curr_rq;
-                    highest_weight = curr_weight;
-                }
-            }
-        }
-    }
-
-    return highest_rq;
-}
 
 // if migration available, return 1 else return 0.
 static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct task_struct *mig_task)
@@ -562,8 +487,8 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     print_errmsg("loadbalance after time check", rq);
     rcu_read_lock();
-    rq_highest_weight = find_highest_weight_rq();
-    rq_lowest_weight = find_lowest_weight_rq();
+    rq_highest_weight = find_highest_weight_rq(NULL);
+    rq_lowest_weight = find_lowest_weight_rq(NULL);
     rcu_read_unlock();
 
     if(rq_highest_weight == NULL) return;
@@ -608,7 +533,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     // deactive task before moving to other cpu.
 
     deactivate_task(rq_highest_weight, migrated_task, 0);
-    set_task_cpu(migrated_task, rq_lowest_weight->cpu);
+    set_task_cpu(migrated_task, cpu_of(rq_lowest_weight));
     activate_task(rq_lowest_weight, migrated_task, 0);
     resched_curr(rq_lowest_weight);
 
@@ -652,51 +577,35 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
 
     // TODO : handle error when there is no cpu to insert new task.
     struct rq *target_rq;
+    struct rq *cpu_rq = cpu_rq(cpu);
     int target;
 
-    print_errmsg("select_task start", NULL);
+    print_errmsg("select_task start", cpu_rq);
 	/* For anything but wake ups, just return the task_cpu */
 	if (sd_flag != SD_BALANCE_WAKE && sd_flag != SD_BALANCE_FORK) {
-        return cpu;
-    }
-
-    if(p->nr_cpus_allowed == 1) {
-        rcu_read_lock();
-        target = cpumask_any_but_online(&p->cpus_allowed, WRR_NO_USE_CPU_NUM);
-        rcu_read_unlock();
-        if(target >= nr_cpu_ids)
-        {
-            printk(KERN_ALERT"there is no cpu that task is allowed!\n");
-            target = cpumask_first(&(p->cpus_allowed));
-        }   // need to handle error
-        else if (target == WRR_NO_USE_CPU_NUM)
-        {
-            printk(KERN_ALERT"task's only available cpu is cpu zero! this is not allowed!\n");
-            target = cpumask_first(&(p->cpus_allowed));
-        }   // need to handle error
-        return target;
+        if(cpu != WRR_NO_USE_CPU_NUM) return cpu;
     }
 
     rcu_read_lock();
-    target_rq = find_lowest_weight_rq();
+    target_rq = find_lowest_weight_rq(p);   // find lowest rq that runnable p.
     rcu_read_unlock();
 
-    target = (target_rq == NULL) ? cpu : cpu_of(target_rq);
-
-    if (cpumask_test_cpu(target, &p->cpus_allowed) == 0) {  // if task coudln't assign to target, just get random task
+    if(target_rq && (target_rq->wrr).weight_sum < (cpu_rq->wrr).weight_sum)
+    {
+        return cpu_of(target_rq);
+    }
+    else if(cpu != WRR_NO_USE_CPU_NUM) return cpu;
+    else
+    {
+        print_errmsg("critical error!!!! kernel corrupted!", cpu_rq);
         rcu_read_lock();
         target = cpumask_any_but_online(&p->cpus_allowed, WRR_NO_USE_CPU_NUM);
         rcu_read_unlock();
-        if(target >= nr_cpu_ids)
-        {
-            printk(KERN_ALERT"there is no cpu that task is allowed!\n");
-            target = cpumask_first(&(p->cpus_allowed));
-        }   // need to handle error
-        
+        return target;
     }
-    return target;
 
-    print_errmsg("select_task end", NULL);
+    print_errmsg("select_task end", cpu_rq);
+    return target;
 }
 
 static void task_woken_wrr(struct rq *rq, struct task_struct *p)
