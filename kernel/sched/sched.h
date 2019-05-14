@@ -2005,7 +2005,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 #endif /* CONFIG_SCHED_DEBUG */
 
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
-extern void init_wrr_rq(struct wrr_rq *wrr_rq);
+extern void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
 

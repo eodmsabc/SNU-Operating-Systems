@@ -37,6 +37,17 @@ static void print_errmsg(const char * str, struct rq *rq)
     printk(KERN_ALERT"%s, in running_cpu %d, in runqueue_cpu %d\n",str, running_cpu, runqueue_cpu);
 }
 
+// get rq of wrr_rq
+static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
+{
+    return container_of(wrr_rq , struct rq, wrr);
+}
+
+// get task of wrr_entity
+static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_entity)
+{
+	return container_of(wrr_entity, struct task_struct, wrr); 
+}
 
 void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
 {
@@ -52,22 +63,14 @@ void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
         wrr_rq->usable = 1;
     }
 
-    print_errmsg("initialize_wrr_rq",rq);
+    print_errmsg("initialize_wrr_rq", rq_of_wrr_rq(wrr_rq));
     
     raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
 }
 
-// get task of wrr_entity
-static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_entity)
-{
-	return container_of(wrr_entity, struct task_struct, wrr); 
-}
 
 /*
-static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
-{
-    return container_of(wrr_rq , struct rq, wrr);
-}
+
 */
 
 /* return value NULL mean that there is no cpu to migration. need RCU lock.
@@ -189,7 +192,6 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_entity_run_list;
     int lowest_weight;
     int weight;
-    int queue_weight = rq->wrr.weight_sum;
     
     print_errmsg("enqueue start", rq);
 
@@ -202,7 +204,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     weight = wrr_entity->weight;
     lowest_weight = lowest_rq->wrr.weight_sum;
 
-    if(rq->usable == 0) // must enqueue other queue
+    if(wrr_rq->usable == 0) // must enqueue other queue
     {
         if(lowest_rq == NULL) //must raise kernel panic
         {
@@ -223,7 +225,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     }
     else
     {
-        if(lowest_rq && ((lowest_weight < wrr_rq->weight_sum)) // enqueue lowest queue.
+        if(lowest_rq && ((lowest_weight < wrr_rq->weight_sum))) // enqueue lowest queue.
         {
             print_errmsg("enqueue to other cpu", rq);
             raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
