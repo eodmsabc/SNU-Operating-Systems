@@ -23,9 +23,9 @@ static unsigned long last_loadbalance_time; // value that saves last_loadbalance
 //this is static long value so it is initialized by 0.
 // this value used at trigger_loadbalance.
 
-static struct rq *find_lowest_weight_rq(struct task_struct *p);
+struct rq *find_lowest_weight_rq(struct task_struct *p);
 
-static void print_errmsg(const char * str, struct rq *rq)
+void print_errmsg(const char * str, struct rq *rq)
 {
     int running_cpu;
     int runqueue_cpu=-1;
@@ -47,6 +47,29 @@ static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
 static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_entity)
 {
 	return container_of(wrr_entity, struct task_struct, wrr); 
+}
+
+// copy from core.c
+static inline bool wrr_is_per_cpu_kthread(struct task_struct *p)
+{
+	if (!(p->flags & PF_KTHREAD))
+		return false;
+
+	if (p->nr_cpus_allowed != 1)
+		return false;
+
+	return true;
+}
+// copy from core.c
+static inline bool wrr_is_cpu_allowed(struct task_struct *p, int cpu)
+{
+	if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
+		return false;
+
+	if (wrr_is_per_cpu_kthread(p))
+		return cpu_online(cpu);
+
+	return cpu_active(cpu);
 }
 
 void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
@@ -79,7 +102,7 @@ void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
  * 
  * return @NULL = there is no runqueue runnable p.
  */
-static struct rq *find_lowest_weight_rq(struct task_struct *p)
+struct rq *find_lowest_weight_rq(struct task_struct *p)
 {
     int curr_cpu;
     int curr_weight;
@@ -96,7 +119,7 @@ static struct rq *find_lowest_weight_rq(struct task_struct *p)
     {
         if(p != NULL)
         {
-            if(!cpumask_test_cpu(curr_cpu, &(p->cpus_allowed))) continue;
+            if(!wrr_is_cpu_allowed(p, curr_cpu)) continue;
         }  // if current cpu is not available for p, just skip.
 
         if(curr_cpu == WRR_NO_USE_CPU_NUM) continue;
@@ -150,7 +173,7 @@ static struct rq *find_highest_weight_rq(struct task_struct *p)
     {
         if(p != NULL)
         {
-            if(!cpumask_test_cpu(curr_cpu, &(p->cpus_allowed))) continue;
+            if(!wrr_is_cpu_allowed(p, curr_cpu)) continue;
         }  // if current cpu is not available for p, just skip.
 
         if(curr_cpu == WRR_NO_USE_CPU_NUM) continue;
@@ -204,53 +227,18 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     weight = wrr_entity->weight;
     lowest_weight = lowest_rq->wrr.weight_sum;
 
-    if(wrr_rq->usable == 0) // must enqueue other queue
-    {
-        if(lowest_rq == NULL) //must raise kernel panic
-        {
-            print_errmsg("critical error!!!! kernel corrupted!", rq);
-            return;
-        }
-        else
-        {
-            print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
-            raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
-            if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
-            set_task_cpu(p, cpu_of(lowest_rq));
-            activate_task(lowest_rq, p, 0);
-            
-            resched_curr(lowest_rq);
-            raw_spin_unlock(&(lowest_rq->lock));
-        }
-    }
-    else
-    {
-        if(lowest_rq && ((lowest_weight < wrr_rq->weight_sum))) // enqueue lowest queue.
-        {
-            print_errmsg("enqueue to other cpu", rq);
-            raw_spin_lock(&(lowest_rq->lock));  // get runqueue lock.
-            if(wrr_entity->on_rq) deactivate_task(rq, p, 0); // if wrr_entity is queue in other queue, deactive and dequeue.
-            set_task_cpu(p, cpu_of(lowest_rq));
-            activate_task(lowest_rq, p, 0);
-            
-            resched_curr(lowest_rq);
-            raw_spin_unlock(&(lowest_rq->lock));
-        }
-        else // enqueue this queue.
-        {
-            print_errmsg("enqueue in this cpu", rq);
-            wrr_rq_queue = &(wrr_rq->queue);
-            wrr_entity_run_list = &(wrr_entity->run_list);
-            // list values initialize.
 
-            list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-            // add wrr_entity to runqueue
+    print_errmsg("enqueue in this cpu", rq);
+    wrr_rq_queue = &(wrr_rq->queue);
+    wrr_entity_run_list = &(wrr_entity->run_list);
+    // list values initialize.
 
-            wrr_rq->weight_sum += weight;
-            wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
-            wrr_entity->on_rq = 1;
-        }
-    }
+    list_add_tail(wrr_entity_run_list, wrr_rq_queue);
+    // add wrr_entity to runqueue
+
+    wrr_rq->weight_sum += weight;
+    wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
+    wrr_entity->on_rq = 1;
 
     print_errmsg("enqueue end", rq);
     
@@ -451,7 +439,8 @@ static int is_migration_available(struct rq *rq_from, struct rq *rq_to, struct t
         return 0;
     
     // migrated task is not runable at other cpu.
-    if (!cpumask_test_cpu(rq_to->cpu, &(mig_task->cpus_allowed)))
+    
+    if (!wrr_is_cpu_allowed(mig_task, cpu_of(rq_to)))
         return 0;
 
     if(weight_rq_from - weight_mig <= weight_rq_to + weight_mig) return 0;
@@ -493,7 +482,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     last_loadbalance_time = current_time;
     spin_unlock(&wrr_loadbalance_lock);
 
-    print_errmsg("loadbalance after time check", rq);
+    //print_errmsg("loadbalance after time check", rq);
     rcu_read_lock();
     rq_highest_weight = find_highest_weight_rq(NULL);
     rq_lowest_weight = find_lowest_weight_rq(NULL);
@@ -554,7 +543,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         load balancing failed. return */
     /*     else then */
     /*         migrate task */
-    print_errmsg("loadbalance end", rq);
+    //print_errmsg("loadbalance end", rq);
 }
 
 /**

@@ -37,6 +37,8 @@
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
+#include <linux/sched/wrr.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
@@ -4028,8 +4030,46 @@ static bool check_same_owner(struct task_struct *p)
 
 // migrate task to other cpu.
 
-/*
-static int wrr_setaffinity_and_migrate(struct task_struct *p)
+
+
+
+static int migrate_wrr(struct task_struct *p, int dest_cpu)
+{   
+    const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+    struct cpumask p_mask; 
+    struct cpumask mask;
+    if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+    if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
+    return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+
+    
+    const struct cpumask *cpu_valid_mask = cpu_online_mask;
+    struct rq_flags rf;
+    struct rq *rq;
+    int ret = 0;
+
+    rq = task_rq_lock(p, &rf);
+	update_rq_clock(rq);
+
+    if (task_running(rq, p) || p->state == TASK_WAKING) {
+		struct migration_arg arg = { p, dest_cpu };
+		/* Need help from migration thread: drop lock and wait. */
+		task_rq_unlock(rq, p, &rf);
+		stop_one_cpu(cpu_of(rq), migration_cpu_stop, &arg);
+		tlb_migrate_finish(p->mm);
+		return 0;
+	} else if (task_on_rq_queued(p)) {
+		/*
+		 * OK, since we're going to drop the lock immediately
+		 * afterwards anyway.
+		 */
+		rq = move_queued_task(rq, &rf, p, dest_cpu);
+	}
+    task_rq_unlock(rq, p, &rf);
+	return ret;
+}
+
+static int set_affinity_and_migrate_wrr(struct task_struct *p, int dest_cpu)
 {
     const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
     struct cpumask p_mask; 
@@ -4037,9 +4077,47 @@ static int wrr_setaffinity_and_migrate(struct task_struct *p)
 
     if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
     if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
-    return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+    if(sched_setaffinity(p->pid, &mask) != 0) return -1;  // set p's affinity. return set_affinity return value. (0 is success.)
+
+    return migrate_wrr(p, dest_cpu);
 }
-*/
+
+
+// migrate task if policy is wrr. return 0 if success, else return not zero.
+static int migrate_task_if_wrr(struct task_struct *p)
+{
+    struct rq *rq = task_rq(p);
+    struct rq *lowest_rq; 
+    
+    rcu_read_lock();
+    lowest_rq = find_lowest_weight_rq(p);
+    rcu_read_unlock();
+
+    if(cpu_of(rq) == WRR_NO_USE_CPU_NUM) // must migrate other queue
+    {
+        if(lowest_rq == NULL) //coudln't migrate. return error value.
+        {
+            print_errmsg("there is no cpu to run this rq.", rq);
+            return -EFAULT;
+        }
+        else
+        {
+            print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+    }
+    else
+    {   
+        if(lowest_rq && ((lowest_rq->wrr.weight_sum < (rq->wrr).weight_sum))) // enqueue lowest queue.
+        {
+            print_errmsg("enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+        else return 0; // enqueue this cpu.
+    }
+
+    return -EFAULT;
+}
 
 /* TODO add wrr */
 static int __sched_setscheduler(struct task_struct *p,
@@ -4056,14 +4134,17 @@ static int __sched_setscheduler(struct task_struct *p,
 	int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
 	struct rq *rq;
 
-    
     if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
     {
         //if(wrr_setaffinity_and_migrate(p) != 0) return -EPERM;
+        int wrr_retval=-1;
         
         const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
         struct cpumask mask;
-        if(cpumask_andnot(&mask, &(p->cpus_allowed), no_use_cpu_mask) == 0) return -EPERM;
+        if(cpumask_andnot(&mask, &(p->cpus_allowed), no_use_cpu_mask) == 0) return -EFAULT;
+
+        wrr_retval=migrate_task_if_wrr(p);
+        if(wrr_retval != 0) return wrr_retval;
     }
 
 	/* The pi code expects interrupts enabled */

@@ -10,3 +10,6 @@
 #define WRR_NO_USE_CPU_NUM 3
 
 #endif  /* _LINUX_SCHED_WRR_H */
+
+struct rq *find_lowest_weight_rq(struct task_struct *p);
+void print_errmsg(const char * str, struct rq *rq);
