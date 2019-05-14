@@ -34,6 +34,7 @@ int main(int argc, char** argv)
 {
     int id;
     unsigned int num = 2;
+    setbuf(stdout, NULL);
 
     if (argc > 2) {
         fprintf(stderr, "trial: invalid argument\n");

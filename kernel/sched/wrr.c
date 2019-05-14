@@ -421,10 +421,8 @@ static void task_fork_wrr(struct task_struct *p)
 
 static void task_dead_wrr(struct task_struct *p)
 {
-    /* TODO */
     return;
 }
-
 
 
 // if migration available, return 1 else return 0.
@@ -466,13 +464,14 @@ void trigger_load_balance_wrr(struct rq *rq)
     int weight_lowest;
     int curr_weight;
     int mig_weight = 0;
+    unsigned long flags;
 
     struct sched_wrr_entity *curr_entity;
 
 
 
     // check is 2000ms passed
-    spin_lock(&wrr_loadbalance_lock);
+    spin_lock_irqsave(&wrr_loadbalance_lock, flags);
     current_time = jiffies;
     if (current_time < last_loadbalance_time + 2*HZ)
     {
@@ -480,7 +479,7 @@ void trigger_load_balance_wrr(struct rq *rq)
         return;
     }
     last_loadbalance_time = current_time;
-    spin_unlock(&wrr_loadbalance_lock);
+    spin_unlock_irqrestore(&wrr_loadbalance_lock, flags);
 
     //print_errmsg("loadbalance after time check", rq);
     rcu_read_lock();
@@ -496,6 +495,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     if(rq_highest_weight->wrr.weight_sum == rq_lowest_weight->wrr.weight_sum) return;
     // 1 cpu exist case
 
+    local_irq_save(flags); // disable interrupt before locking.
     double_rq_lock(rq_highest_weight, rq_lowest_weight);
     
     wrr_rq_highest_weight = &(rq_highest_weight->wrr);
@@ -524,6 +524,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     if (migrated_task == NULL)  // there is no migrate task.
     {
         double_rq_unlock(rq_highest_weight, rq_lowest_weight);
+        local_irq_restore(flags); // enable interrupt after locking.
         return;
     }
 
@@ -535,6 +536,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     resched_curr(rq_lowest_weight);
 
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
+    local_irq_restore(flags); // enable interrupt after locking.
 
     /* if this cpu == highest and weight differnce is enough then */
     /*     search for suitable task for migration */
