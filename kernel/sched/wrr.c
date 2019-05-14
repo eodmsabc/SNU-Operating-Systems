@@ -23,7 +23,7 @@ static unsigned long last_loadbalance_time; // value that saves last_loadbalance
 //this is static long value so it is initialized by 0.
 // this value used at trigger_loadbalance.
 
-static struct rq *find_lowest_weight_rq(void);
+static struct rq *find_lowest_weight_rq(struct task_struct *p);
 
 static void print_errmsg(const char * str, struct rq *rq)
 {
@@ -70,9 +70,12 @@ static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
 }
 */
 
-// return value NULL mean that there is no cpu to migration. need RCU lock.
-// find lowest weight rq. if argument is NULL, get lowest weight rq in online cpu.
-// if argument is setted, then return only lowest rq that p could align.
+/* return value NULL mean that there is no cpu to migration. need RCU lock.
+ * find lowest weight rq. if argument is NULL, get lowest weight rq in online cpu.
+ * if argument is setted, then return only lowest rq that p could align.
+ * 
+ * return @NULL = there is no runqueue runnable p.
+ */
 static struct rq *find_lowest_weight_rq(struct task_struct *p)
 {
     int curr_cpu;
@@ -121,9 +124,12 @@ static struct rq *find_lowest_weight_rq(struct task_struct *p)
 }
 
 
-// return value NULL mean that there is no cpu to migration. need RCU lock.
-// find highest weight rq. if argument is NULL, get lowest weight rq in online cpu.
-// if argument is setted, then return only lowest rq that p could align.
+/* return value NULL mean that there is no cpu to migration. need RCU lock.
+ * find highest weight rq. if argument is NULL, get highest weight rq in online cpu.
+ * if argument is setted, then return only lowest rq that p could align.
+ * 
+ * return @NULL = there is no runqueue runnable p.
+ */
 static struct rq *find_highest_weight_rq(struct task_struct *p)
 {
     int curr_cpu;
