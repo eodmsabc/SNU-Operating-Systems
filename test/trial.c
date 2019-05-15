@@ -54,6 +54,7 @@ int main(int argc, char** argv)
 
     while(num) {
         prime_factorization(id, num);
+        sleep(1);
         num++;
     }
 

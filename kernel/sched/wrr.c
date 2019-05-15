@@ -227,14 +227,14 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     weight = wrr_entity->weight;
     lowest_weight = lowest_rq->wrr.weight_sum;
 
-
     print_errmsg("enqueue in this cpu", rq);
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_entity_run_list = &(wrr_entity->run_list);
     // list values initialize.
 
-    list_add_tail(wrr_entity_run_list, wrr_rq_queue);
-    // add wrr_entity to runqueue
+    
+    list_add_tail(wrr_entity_run_list, wrr_rq_queue); // add wrr_entity to runqueue
+    resched_curr(rq);
 
     wrr_rq->weight_sum += weight;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
@@ -262,13 +262,13 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_entity_run_list = &(wrr_entity->run_list);
 
-    // list values initialize.
-
     list_del_init(wrr_entity_run_list);
-
     wrr_rq->weight_sum -= weight;
     wrr_entity->on_rq = 0;
-    print_errmsg("enqueue end", rq);
+    resched_curr(rq);
+
+    // list values initialize.
+    print_errmsg("dequeue end", rq);
 }
 
 /* need to update entity AFTER requeue. */  
@@ -280,12 +280,20 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
     struct wrr_rq *wrr_rq;
     struct sched_wrr_entity *wrr_se;
     struct list_head *wrr_entity_run_list;
+    struct task_struct *curr;
 
     wrr_rq = &(rq->wrr);
 
     if(p == NULL) return;
     if(p->policy != SCHED_WRR) return;
-    wrr_se = &(p->wrr);
+    if(list_empty(&(wrr_rq->queue))) {
+        return;
+    }
+    else
+    {
+        curr = get_task_of_wrr_entity(list_first_entry(&(wrr_rq->queue), struct sched_wrr_entity, run_list));
+    }
+    wrr_se = &(curr->wrr);
     wrr_entity_run_list = &(wrr_se->run_list);
 
     list_del_init(wrr_entity_run_list);
@@ -589,7 +597,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     target_rq = find_lowest_weight_rq(p);   // find lowest rq that runnable p.
     rcu_read_unlock();
 
-    if(target_rq && (target_rq->wrr).weight_sum < (cpu_rq->wrr).weight_sum)
+    if(target_rq && ((target_rq->wrr).weight_sum + (p->wrr).weight < (cpu_rq->wrr).weight_sum - (p->wrr).weight))
     {
         return cpu_of(target_rq);
     }
