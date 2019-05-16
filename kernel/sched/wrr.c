@@ -37,6 +37,29 @@ void print_errmsg(const char * str, struct rq *rq)
     printk(KERN_ALERT"%s, in running_cpu %d, in runqueue_cpu %d\n",str, running_cpu, runqueue_cpu);
 }
 
+void print_cpus_weight()
+{
+    int cpu;
+    struct rq *rq;
+    int i=0;
+
+    int weights[8];
+
+    rcu_read_lock();
+    for_each_online_cpu(cpu)
+    {
+        rq = cpu_rq(cpu);
+        weights[cpu] = rq->wrr.weight_sum;
+    }
+    rcu_read_unlock();
+
+    for(i=0;i<4;i++)
+    {
+        printk(KERN_ALERT"cpu %d's wrr weight is %d\n",i, weights[i]);
+    }
+    
+}
+
 // get rq of wrr_rq
 /*
 static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
@@ -500,6 +523,8 @@ void trigger_load_balance_wrr(struct rq *rq)
     rq_lowest_weight = find_lowest_weight_rq(NULL);
     rcu_read_unlock();
 
+    print_cpus_weight();
+
     if(rq_highest_weight == NULL) return;
     if(rq_lowest_weight == NULL) return;
     // can't find runqueue to migrate.  
@@ -555,6 +580,8 @@ void trigger_load_balance_wrr(struct rq *rq)
     local_irq_restore(flags); // enable interrupt after locking.
 
     printk(KERN_ALERT"loadbalance %d cpu to %d cpu\n",rq_highest_weight->cpu, rq_lowest_weight->cpu);
+
+    print_cpus_weight();
     /* if this cpu == highest and weight differnce is enough then */
     /*     search for suitable task for migration */
     /*     (e.g. not running and compatiable with lowest cpu) */
