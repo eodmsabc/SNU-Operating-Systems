@@ -523,7 +523,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     rq_lowest_weight = find_lowest_weight_rq(NULL);
     rcu_read_unlock();
 
-    print_cpus_weight();
+    //print_cpus_weight();
 
     if(rq_highest_weight == NULL) return;
     if(rq_lowest_weight == NULL) return;
@@ -533,7 +533,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     if(rq_highest_weight->wrr.weight_sum == rq_lowest_weight->wrr.weight_sum) return;
     // 1 cpu exist case
 
-    print_errmsg("loadbalance start", rq);
+    //print_errmsg("loadbalance start", rq);
 
     local_irq_save(flags); // disable interrupt before locking.
     double_rq_lock(rq_highest_weight, rq_lowest_weight);
@@ -565,7 +565,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     {
         double_rq_unlock(rq_highest_weight, rq_lowest_weight);
         local_irq_restore(flags); // enable interrupt after locking.
-        printk(KERN_ALERT"loadbalance attempted, but no task migrated\n");
+        //printk(KERN_ALERT"loadbalance attempted, but no task migrated\n");
         return;
     }
 
@@ -579,9 +579,9 @@ void trigger_load_balance_wrr(struct rq *rq)
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
     local_irq_restore(flags); // enable interrupt after locking.
 
-    printk(KERN_ALERT"loadbalance %d cpu to %d cpu\n",rq_highest_weight->cpu, rq_lowest_weight->cpu);
+    //printk(KERN_ALERT"loadbalance %d cpu to %d cpu\n",rq_highest_weight->cpu, rq_lowest_weight->cpu);
 
-    print_cpus_weight();
+    //print_cpus_weight();
     /* if this cpu == highest and weight differnce is enough then */
     /*     search for suitable task for migration */
     /*     (e.g. not running and compatiable with lowest cpu) */
@@ -589,7 +589,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         load balancing failed. return */
     /*     else then */
     /*         migrate task */
-    print_errmsg("loadbalance end", rq);
+    //print_errmsg("loadbalance end", rq);
 }
 
 /**

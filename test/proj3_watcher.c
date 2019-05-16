@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -78,6 +79,19 @@ int main(int argc)
 
 	struct sched_param param;
 
+    cpu_set_t my_set;        /* Define your cpu_set bit mask. */
+    cpu_set_t new_set;
+    CPU_ZERO(&my_set);       /* Initialize it all to 0, i.e. no CPUs selected. */
+    CPU_ZERO(&new_set);
+    CPU_SET(0, &my_set);     /* set the bit that represents core 0. */
+    
+    CPU_SET(0, &new_set);
+    CPU_SET(1, &new_set);
+    CPU_SET(2, &new_set);
+    CPU_SET(3, &new_set);
+
+    if(sched_setaffinity(0, sizeof(cpu_set_t), &my_set) != 0) return 0;  
+
 	init_pid_list(pid_list);
 	while(1)
 	{
@@ -95,10 +109,18 @@ int main(int argc)
 				pid = fork();
 				if(pid == 0) //child
 				{
-					execl("./proj3_worker", "proj3_worker", NULL);
-					printf("=======================================\n");
-					printf("pid : %d failed\n", pid);
-					printf("=======================================\n");
+                    if(sched_setaffinity(0, sizeof(cpu_set_t), &new_set) == 0)
+                    {
+                        execl("./proj3_worker", "proj3_worker", NULL);
+                        printf("=======================================\n");
+                        printf("pid : %d failed\n", pid);
+                        printf("=======================================\n");
+                    }
+                    else
+                    {
+                        printf("set affinity failed\n");
+                    }
+					
 				}
 				else //parent
 				{
