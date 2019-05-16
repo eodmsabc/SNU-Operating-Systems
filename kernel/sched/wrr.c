@@ -37,7 +37,7 @@ void print_errmsg(const char * str, struct rq *rq)
     printk(KERN_ALERT"%s, in running_cpu %d, in runqueue_cpu %d\n",str, running_cpu, runqueue_cpu);
 }
 
-void print_cpus_weight()
+void print_cpus_weight(void)
 {
     int cpu;
     struct rq *rq;
