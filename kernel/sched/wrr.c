@@ -86,7 +86,7 @@ void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
         wrr_rq->usable = 1;
     }
 
-    print_errmsg("initialize_wrr_rq", rq_of_wrr_rq(wrr_rq));
+    //print_errmsg("initialize_wrr_rq", rq_of_wrr_rq(wrr_rq));
     
     raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
 }
@@ -216,7 +216,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     int lowest_weight;
     int weight;
     
-    print_errmsg("enqueue start", rq);
+    //print_errmsg("enqueue start", rq);
 
     rcu_read_lock();
     lowest_rq = find_lowest_weight_rq(p);   // get lowest rq task p runnable.
@@ -227,7 +227,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     weight = wrr_entity->weight;
     lowest_weight = lowest_rq->wrr.weight_sum;
 
-    print_errmsg("enqueue in this cpu", rq);
+    //print_errmsg("enqueue in this cpu", rq);
     wrr_rq_queue = &(wrr_rq->queue);
     wrr_entity_run_list = &(wrr_entity->run_list);
     // list values initialize.
@@ -242,7 +242,7 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
 
     add_nr_running(rq, 1);
 
-    print_errmsg("enqueue end", rq);
+    //print_errmsg("enqueue end", rq);
     
 }
 
@@ -255,7 +255,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     struct list_head *wrr_entity_run_list;
     int weight;
     
-    print_errmsg("dequeue start", rq);
+    //print_errmsg("dequeue start", rq);
     wrr_rq = &(rq->wrr);
 
     wrr_entity = &(p->wrr);
@@ -272,7 +272,7 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     sub_nr_running(rq, 1);
 
     // list values initialize.
-    print_errmsg("dequeue end", rq);
+    //print_errmsg("dequeue end", rq);
 }
 
 /* need to update entity AFTER requeue. */  
@@ -304,7 +304,7 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
     list_add_tail(wrr_entity_run_list, &(wrr_rq->queue));
 
     wrr_se->time_slice = wrr_se->weight * WRR_TIMESLICE;
-    print_errmsg("requeue end", rq);
+    //print_errmsg("requeue end", rq);
 }
 
 static void yield_task_wrr(struct rq *rq)
@@ -348,7 +348,7 @@ static void switched_to_wrr(struct rq *rq, struct task_struct *p)
     wrr_entity = &(p->wrr);
     wrr_entity->weight = 10;
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
-    print_errmsg("switch end", rq);
+    //print_errmsg("switch end", rq);
 }
 
 static void
@@ -401,15 +401,15 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) // T
     }
     else
     {
-        print_errmsg("task_tick_wrr in else", rq);
+        //print_errmsg("task_tick_wrr in else", rq);
 
         requeue_task_wrr(rq, curr);
 
-        print_errmsg("task_tick_wrr after requeue", rq);
+        //print_errmsg("task_tick_wrr after requeue", rq);
 
         resched_curr(rq); // TODO : is this ok for when holding lock, resched_curr is correct?
         
-        print_errmsg("task_tick_wrr after resched", rq);
+        //print_errmsg("task_tick_wrr after resched", rq);
         // should we use set_tsk_need_resched(p)?
     }
     return;
@@ -487,13 +487,12 @@ void trigger_load_balance_wrr(struct rq *rq)
     current_time = jiffies;
     if (current_time < last_loadbalance_time + 2*HZ)
     {
-        spin_unlock(&wrr_loadbalance_lock);
+        spin_unlock_irqrestore(&wrr_loadbalance_lock, flags);
         return;
     }
     last_loadbalance_time = current_time;
     spin_unlock_irqrestore(&wrr_loadbalance_lock, flags);
 
-    //print_errmsg("loadbalance after time check", rq);
     rcu_read_lock();
     rq_highest_weight = find_highest_weight_rq(NULL);
     rq_lowest_weight = find_lowest_weight_rq(NULL);
@@ -506,6 +505,8 @@ void trigger_load_balance_wrr(struct rq *rq)
 
     if(rq_highest_weight->wrr.weight_sum == rq_lowest_weight->wrr.weight_sum) return;
     // 1 cpu exist case
+
+    print_errmsg("loadbalance start", rq);
 
     local_irq_save(flags); // disable interrupt before locking.
     double_rq_lock(rq_highest_weight, rq_lowest_weight);
@@ -537,6 +538,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     {
         double_rq_unlock(rq_highest_weight, rq_lowest_weight);
         local_irq_restore(flags); // enable interrupt after locking.
+        printk(KERN_ALERT"loadbalance attempted, but no task migrated\n");
         return;
     }
 
@@ -550,6 +552,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     double_rq_unlock(rq_highest_weight, rq_lowest_weight);
     local_irq_restore(flags); // enable interrupt after locking.
 
+    printk(KERN_ALERT"loadbalance %d cpu to %d cpu\n",rq_highest_weight->cpu, rq_lowest_weight->cpu);
     /* if this cpu == highest and weight differnce is enough then */
     /*     search for suitable task for migration */
     /*     (e.g. not running and compatiable with lowest cpu) */
@@ -557,7 +560,7 @@ void trigger_load_balance_wrr(struct rq *rq)
     /*         load balancing failed. return */
     /*     else then */
     /*         migrate task */
-    //print_errmsg("loadbalance end", rq);
+    print_errmsg("loadbalance end", rq);
 }
 
 /**
@@ -591,7 +594,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     struct rq *cpu_rq = cpu_rq(cpu);
     int target;
 
-    print_errmsg("select_task start", cpu_rq);
+    //print_errmsg("select_task start", cpu_rq);
 	/* For anything but wake ups, just return the task_cpu */
 	if (sd_flag != SD_BALANCE_WAKE && sd_flag != SD_BALANCE_FORK) {
         if(cpu != WRR_NO_USE_CPU_NUM) return cpu;
@@ -608,14 +611,14 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     else if(cpu != WRR_NO_USE_CPU_NUM) return cpu;
     else
     {
-        print_errmsg("critical error!!!! kernel corrupted!", cpu_rq);
+        //print_errmsg("critical error!!!! kernel corrupted!", cpu_rq);
         rcu_read_lock();
         target = cpumask_any_but_online(&p->cpus_allowed, WRR_NO_USE_CPU_NUM);
         rcu_read_unlock();
         return target;
     }
 
-    print_errmsg("select_task end", cpu_rq);
+    //print_errmsg("select_task end", cpu_rq);
     return target;
 }
 

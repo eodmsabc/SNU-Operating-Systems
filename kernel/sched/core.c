@@ -4043,8 +4043,6 @@ static int migrate_wrr(struct task_struct *p, int dest_cpu)
     if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
     return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
 
-    
-    const struct cpumask *cpu_valid_mask = cpu_online_mask;
     struct rq_flags rf;
     struct rq *rq;
     int ret = 0;
@@ -4098,12 +4096,12 @@ static int migrate_task_if_wrr(struct task_struct *p)
     {
         if(lowest_rq == NULL) //coudln't migrate. return error value.
         {
-            print_errmsg("there is no cpu to run this rq.", rq);
+            //print_errmsg("there is no cpu to run this rq.", rq);
             return -EFAULT;
         }
         else
         {
-            print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
+            //print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
             return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
         }
     }
@@ -4111,10 +4109,19 @@ static int migrate_task_if_wrr(struct task_struct *p)
     {   
         if(lowest_rq && ((lowest_rq->wrr.weight_sum < (rq->wrr).weight_sum))) // enqueue lowest queue.
         {
-            print_errmsg("enqueue to other cpu", rq);
+            //print_errmsg("enqueue to other cpu", rq);
             return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
         }
-        else return 0; // enqueue this cpu.
+        else
+        {
+            const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+            struct cpumask p_mask; 
+            struct cpumask mask;
+
+            if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+            if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
+            return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+        }
     }
 
     return -EFAULT;

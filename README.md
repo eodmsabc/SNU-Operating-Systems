@@ -150,7 +150,7 @@ switched_to : task가 다른 policy에서 wrr policy로 바뀌었을때 가질 w
 
 ##### load balancing 구현
 
-로드밸런싱을 하기위해서, core.c의 scheduler_tick에 다음과같이 wrr 로드밸런싱을 하는 로직을 추가했다.
+로드밸런싱을 하기위해서, core.c의 scheduler_tick에 다음과같이 wrr 로드밸런싱을 하는 함수를 부르는 로직을 추가했다.
 
 '''
 #ifdef CONFIG_SMP
@@ -173,101 +173,105 @@ switched_to : task가 다른 policy에서 wrr policy로 바뀌었을때 가질 w
 
 ##### cpu runqueue 하나 비우기 구현
 
+우리의 구현에서, cpu runqueue중 무조건 하나에는 wrr task가 할당될 수 없으므로, 다음과 같은 방법을 통해 CPU중 하나에 wrr task를 할당할 수 없게 하였다.
 
+현재 구현에서는 CPU 0을 사용하지 않는다.
 
+이를 구현하기 위해, wrr.c 에서 runqueue를 initialize할때 다음과 같이 현재 cpu에 따라 usable값을 설정해준다.
 
+'''
+void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu)
+{
 
+    INIT_LIST_HEAD(&(wrr_rq->queue));
+    
+    wrr_rq->weight_sum = 0;
 
-
-
-****************************************8
-
-lock 요청을 할때, 다음 loop를 돌면서 락을 할당할지, 말지를 결정한다.
-
-```
-while(!reader_should_go(rot_lock))
-    {
-        mutex_unlock(&my_lock);
-        wait_for_completion(&(rot_lock->comp));
-        mutex_lock(&my_lock);
-        reinit_completion(&(rot_lock->comp)); // if wake up, completion need to reinitiating because completion has memory of complete(). multiple complete, multiple no-wait.
+    if (cpu == WRR_NO_USE_CPU_NUM) {
+        wrr_rq->usable = 0;
     }
-```
+    else {
+        wrr_rq->usable = 1;
+    }
 
-락 요청마다 우리가 구현한 rotation_lock 구조체를 생성한다. rotation_lock 구조체는 내부에 락을 요청한 프로세스의 정보, 락의 정보와 리눅스 lock structure중 하나인 completion을 원소로 가지게 된다.
+    print_errmsg("initialize_wrr_rq", rq_of_wrr_rq(wrr_rq));
+    
+    raw_spin_lock_init(&(wrr_rq->wrr_runtime_lock));
+}
+'''
 
-completion은 wait queue의 단순화된 버전인데, wait_for_completion(&comp)를 통해 comp가 진행하는 일이 끝날때까지 해당 쓰레드를 잠시 재울수 있고, 다른 쓰레드에서 complete(&comp)를 실행할때 wake up 하게 된다.
+또한, 더 확실하게 cpu를 비우기 위해, core.c의 __sched_setscheduler 초반부에 다음과 같은 로직을 추가했다.
 
-따라서 위 루프에서 진행조건이 성립되지 않으면 wait을 통해 진행조건이 만족될 가능성이 생길때까지 잠들어 있다가, 깨어난뒤 진행조건을 다시 보고 진행할지 말지를 결정하게 된다.
+'''
+if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
+{
+	int wrr_retval=-1;
 
+	const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+	struct cpumask mask;
+	if(cpumask_andnot(&mask, &(p->cpus_allowed), no_use_cpu_mask) == 0) return -EFAULT;
 
-이때 completion의 경우, user-space에서의 condition variable과 다르게 memoryness를 가지고 있으므로,
-여러번 complete 요청을 받고 쓸데없이 계속 일어나는것을 막기 위해 reinit_completion을 통해 반복되는 wakeup을 없애주었다.
+	wrr_retval=migrate_task_if_wrr(p);
+	if(wrr_retval != 0) return wrr_retval;
+}
+'''은
+이 로직은 만약 setscheduler를 통해 wrr policy로 전환을 요청하는 태스크가 있다면,
+먼저 그 task가 쓰지 않는 cpu에서만 실행될 수 있는지 판단한다음, 그렇다면 policy 전환이 불가능 하다고 보고 에러를 리턴한다.
+만약 그렇지 않다면, migrate_task_if_wrr() 함수를 통해 task를 다른 cpu로 migrate하는 과정을 거친다.
 
-completion을 기다리는 문장이 while loop 내부에 들어있으므로, 설사 false-wakeup이 일어나더라도 safety를 보장하게 하였다.
+'''
+// migrate task if policy is wrr. return 0 if success, else return not zero.
+static int migrate_task_if_wrr(struct task_struct *p)
+{
+    struct rq *rq = task_rq(p);
+    struct rq *lowest_rq; 
+    
+    rcu_read_lock();
+    lowest_rq = find_lowest_weight_rq(p);
+    rcu_read_unlock();
 
-##### unlocking our lock
+    if(cpu_of(rq) == WRR_NO_USE_CPU_NUM) // must migrate other queue
+    {
+        if(lowest_rq == NULL) //coudln't migrate. return error value.
+        {
+            print_errmsg("there is no cpu to run this rq.", rq);
+            return -EFAULT;
+        }
+        else
+        {
+            print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+    }
+    else
+    {   
+        if(lowest_rq && ((lowest_rq->wrr.weight_sum < (rq->wrr).weight_sum))) // enqueue lowest queue.
+        {
+            print_errmsg("enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+        else
+        {
+            const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+            struct cpumask p_mask; 
+            struct cpumask mask;
 
-락을 풀어줄때는 현재 대기하고 있는 락 요청중 어떤 락 요청을 진행시킬지를 정해야 한다.
+            if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+            if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
+            return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+        }
+    }
 
-우리 구현의 핵심만 뽑으면 다음과 같다. writer lock 해제할때의 예시이다.
+    return -EFAULT;
+}
+'''
+migrate_task_if_wrr 함수에서는, 태스크가 실행될 수 있는 cpu중, 가장 weight가 낮은 cpu의 runqueue를 받아온다.
+그 후, 만약 현재 task의 runqueue를 보고 이 태스크를 migrate 해야하는지 아닌지를 결정한다.
+migrate하기로 결정되었다면, task의 affinity를, 쓰지 않는 cpu에 할당될 수 없도록 설정한다음, 가장 낮은 weight의 runqueue로 migrate하는 과정을 거치게 된다.
+그렇지 않다면 그냥 affinity만 바꿔준다.
 
-```
-    mutex_lock(&my_lock);
-
-    rot_lock = pop_node(degree, range, &writer_active_list);
-
-    retval = write_lock_release(rot_lock); //change current state.
-
-    inform_writer_at_current_rotation();
-    inform_reader_at_current_rotation();
-
-    mutex_unlock(&my_lock);
-```
-
-현재 active writer lock list에서 요청받은 lock을 제거하고, writer lock을 풀어준다. (write_lock_release)
-그리고 나서, 대기하고 있는 writer와 reader들에게 락이 해제되었음을 알려준다.
-
-
-1. writer lock이 해제된경우, 현재 대기하고 있는 다른 writer lock이나 reader lock이 새로 할당될 수 있다.
-이때, 각 lock은 현재 rotation과 락이 요청한 범위가 맞아야하고, writer lock과 reader lock의 경우
-자신이 할당될 수 있는지 현재 상태를 체크하는 과정이 필요한데, 앞에서 락 요청을 구현할때 while loop에
-락 요청마다 현재 이 락 요청이 진행할 수 있는지 없는지를 체크하게 해놓았다.
-때문에 굳이 락을 풀어줄때 어떤 락 요청이 진행할 수 있을지 검사를 다시 할 필요가 없다고 생각하여,
-락이 진행할 수 있는 최소한의 조건만 만족하면 해당되는 락 요청들을 wakeup 하게 하였다.
-
-따라서 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 reader, writer 락 요청들을 모두 wakeup 하게 구현하였다.
-
-2. reader lock이 해제된경우, reader lock의 경우는 다른 reader lock과 lock region을 공유할 수 있기 때문에, reader lock이 해제되었다고 해서 지금까지 할당되지 못했던 reader lock 요청이 진행되는 경우는 존재하지 않는다.
-
-따라서 writer lock이 해제될때와 같이, 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 writer 락 요청들만 모두 wakeup 하게 구현하였다.
-
-
-
-
-
-##### how to don't starve writer?
-
-이번 프로젝트를 진행하면서 가장 많이 신경썼던 부분은 writer가 starvation 하지 않게 하는 부분이었다.
-
-이를 달성하기 위해서는 어떨때 write lock을 걸수 있는지, read lock을 걸수 있는지 결정해야했다.
-
-따라서, read lock과  write lock 요청에서 다음과 같은 조건으로 진행하게 하였다.
-
-공통 조건으로는,
-1. 요청한 락이 current_rotation 범위내에 존재할것
-2. 락 요청을 받았을때, 현재 상태가 lock을 할당할수 있는 상태일것. 
-   (reader의 경우, read lock의 area에 해당하는 state들의 값이 양수일때,
-    writer의 경우, write lock의 area에 해당하는 state들의 값이 0일때)
-
-그리고 reader의 경우, 추가적으로 다음 조건을 검사한다.
-3. current_rotation에서 wait하고 있는 write lock 요청이 없을것.
-
-이 조건을 통해, write lock 요청이 대기하고 있을경우, read lock 요청이 어떤순서로 들어오든간에 최우선적으로 write lock에게 우선권을 부여하게 된다. 보통의 reader_writer lock의 경우는 writer보다 먼저 들어온 reader의 경우 writer보다 먼저 lock을 할당받는것이 보장되지만, 우리의 구현에서는
-writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우선적으로 lock을 할당하게 된다.
-
-이를 통해 writer-starvation 문제를 제거하였다.
-
+이를 통해 실행되어서는 안되는 cpu로 wrr task가 들어가는 경우를 차단하였다.
+(fork시에도 affinity는 물려받기 때문에, 특별히 affinity를 바꾸지 않는한 실행될 이유가 없고, usable값을 통해 한번 더 실행되지 말아야할 cpu에서 실행되는 경우를 막아준다.
 
 
 
