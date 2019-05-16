@@ -13,6 +13,16 @@
 #define P_MAX_LEN 1024
 #define P_EMPTY -7
 
+/*********************************************************************************
+ * this test program given by Kim-kiung. thanks for help!!!
+ * *********************************************************************************
+ */
+
+
+
+
+
+
 void init_pid_list(int *plist)
 {
 	int i;

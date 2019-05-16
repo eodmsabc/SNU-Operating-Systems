@@ -1,11 +1,10 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sched.h>
 
 // copied from /include/uapi/linux/sched/types.h
-struct sched_param {
-	int sched_priority;
-};
 
 #define SYSCALL_SCHED_SETSCHEDULER 156
 #define SYSCALL_SETWEIGHT 398
@@ -13,10 +12,8 @@ struct sched_param {
 
 #define SCHED_WRR 7
 
-#define PRIME1 7368787
+#define PRIME1 1299709
 #define PRIME PRIME1
-
-#define FORK_DEPTH 2
 
 void prime_factorization(int id, int num)
 {
@@ -37,34 +34,28 @@ void prime_factorization(int id, int num)
 
 int main(int argc, char** argv)
 {
-    int id, depth, i;
-    pid_t pid;
+    int id;
+    int cpu;
     unsigned int num = 1;
-    setbuf(stdout, NULL);
+    cpu_set_t mask;
 
-    id = 0;
-    depth = 0;
-
-    struct sched_param param; 
-    param.sched_priority = 0;
-    // SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy, struct sched_param __user *, param)
-    if (syscall(SYSCALL_SCHED_SETSCHEDULER, 0 , SCHED_WRR, &param)) {
-        fprintf(stderr, "trial-%d: failed setting schedule policy to wrr", id);
+    if (argc > 3) {
+        fprintf(stderr, "trial: invalid argument\n");
         return 1;
     }
-
-    for (i = 0; i < FORK_DEPTH; i++) {
-        if ((pid = fork())) // parent
-        {
-            depth++;
-            id = id * 2;
-        }
-        else    // child
-        {
-            depth++;
-            id = id * 2 + 1;
-        }
+    else {
+        id = (argc == 3)? atoi(argv[2]) : 0;
+        cpu = atoi(argv[1]);
     }
+    
+    printf("trial-%d: launched", id);
+    fflush(stdout);
+
+    CPU_ZERO(&mask);
+    CPU_SET(0, &mask);
+    CPU_SET(cpu, &mask);
+
+    sched_setaffinity(0, sizeof(mask), &mask);
 
     while(num) {
         prime_factorization(id, PRIME);
