@@ -240,6 +240,8 @@ enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_entity->time_slice = wrr_entity->weight * WRR_TIMESLICE;
     wrr_entity->on_rq = 1;
 
+    add_nr_running(rq, 1);
+
     print_errmsg("enqueue end", rq);
     
 }
@@ -266,6 +268,8 @@ dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags)
     wrr_rq->weight_sum -= weight;
     wrr_entity->on_rq = 0;
     resched_curr(rq);
+
+    sub_nr_running(rq, 1);
 
     // list values initialize.
     print_errmsg("dequeue end", rq);
@@ -305,7 +309,7 @@ requeue_task_wrr(struct rq *rq, struct task_struct *p)
 
 static void yield_task_wrr(struct rq *rq)
 {
-    requeue_task_wrr(rq, rq->curr);
+    //requeue_task_wrr(rq, rq->curr);
 }
 
 static bool yield_to_task_wrr(struct rq *rq, struct task_struct *p, bool preempt)
