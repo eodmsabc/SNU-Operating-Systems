@@ -4039,14 +4039,10 @@ static int migrate_wrr(struct task_struct *p, int dest_cpu)
     const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
     struct cpumask p_mask; 
     struct cpumask mask;
-    if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
-    if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
-    return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
-
     struct rq_flags rf;
     struct rq *rq;
     int ret = 0;
-
+    
     rq = task_rq_lock(p, &rf);
 	update_rq_clock(rq);
 
