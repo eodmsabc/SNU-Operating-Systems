@@ -38,10 +38,12 @@ void print_errmsg(const char * str, struct rq *rq)
 }
 
 // get rq of wrr_rq
+/*
 static struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq)
 {
     return container_of(wrr_rq , struct rq, wrr);
 }
+*/
 
 // get task of wrr_entity
 static struct task_struct *get_task_of_wrr_entity(struct sched_wrr_entity *wrr_entity)
