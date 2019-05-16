@@ -601,7 +601,7 @@ select_task_rq_wrr(struct task_struct *p, int cpu, int sd_flag, int flags)
     target_rq = find_lowest_weight_rq(p);   // find lowest rq that runnable p.
     rcu_read_unlock();
 
-    if(target_rq && ((target_rq->wrr).weight_sum + (p->wrr).weight < (cpu_rq->wrr).weight_sum - (p->wrr).weight))
+    if(target_rq && ((target_rq->wrr).weight_sum < (cpu_rq->wrr).weight_sum)
     {
         return cpu_of(target_rq);
     }

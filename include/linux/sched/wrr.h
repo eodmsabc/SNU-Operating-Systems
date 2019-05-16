@@ -7,7 +7,7 @@
 #define WRR_MINWEIGHT 1
 #define WRR_MAXWEIGHT 20
 #define WEIGHT_INITIALVALUE -1
-#define WRR_NO_USE_CPU_NUM 3
+#define WRR_NO_USE_CPU_NUM 0
 
 #endif  /* _LINUX_SCHED_WRR_H */
 
