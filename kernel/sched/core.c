@@ -37,6 +37,8 @@
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
+#include <linux/sched/wrr.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
@@ -907,7 +909,7 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 }
 
 /*
- * Per-CPU kthreads are allowed to run on !actie && online CPUs, see
+ * Per-CPU kthreads are allowed to run on !active && online CPUs, see
  * __set_cpus_allowed_ptr() and select_fallback_rq().
  */
 static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
@@ -2383,12 +2385,13 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		 */
 		p->sched_reset_on_fork = 0;
 	}
-
-	if (dl_prio(p->prio)) {
+    if (p->policy == SCHED_WRR) {
+        p->sched_class = &wrr_sched_class;
+    } else if (dl_prio(p->prio)) {
 		put_cpu();
 		return -EAGAIN;
 	} else if (rt_prio(p->prio)) {
-		p->sched_class = &rt_sched_class;
+		p->sched_class = &rt_sched_class;       /* TODO add wrr */
 	} else {
 		p->sched_class = &fair_sched_class;
 	}
@@ -3040,6 +3043,7 @@ void scheduler_tick(void)
 #ifdef CONFIG_SMP
 	rq->idle_balance = idle_cpu(cpu);
 	trigger_load_balance(rq);
+    trigger_load_balance_wrr(rq);
 #endif
 	rq_last_tick_reset(rq);
 }
@@ -3728,27 +3732,34 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	 *      --> -dl task blocks on mutex A and could preempt the
 	 *          running task
 	 */
-	if (dl_prio(prio)) {
-		if (!dl_prio(p->normal_prio) ||
-		    (pi_task && dl_entity_preempt(&pi_task->dl, &p->dl))) {
-			p->dl.dl_boosted = 1;
-			queue_flag |= ENQUEUE_REPLENISH;
-		} else
-			p->dl.dl_boosted = 0;
-		p->sched_class = &dl_sched_class;
-	} else if (rt_prio(prio)) {
-		if (dl_prio(oldprio))
-			p->dl.dl_boosted = 0;
-		if (oldprio < prio)
-			queue_flag |= ENQUEUE_HEAD;
-		p->sched_class = &rt_sched_class;
-	} else {
-		if (dl_prio(oldprio))
-			p->dl.dl_boosted = 0;
-		if (rt_prio(oldprio))
-			p->rt.timeout = 0;
-		p->sched_class = &fair_sched_class;
-	}
+    if (dl_prio(prio)) {
+        if (!dl_prio(p->normal_prio) ||
+            (pi_task && dl_entity_preempt(&pi_task->dl, &p->dl))) {
+            p->dl.dl_boosted = 1;
+            queue_flag |= ENQUEUE_REPLENISH;
+        } else
+            p->dl.dl_boosted = 0;
+        p->sched_class = &dl_sched_class;
+    } else if (rt_prio(prio)) {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        if (oldprio < prio)
+            queue_flag |= ENQUEUE_HEAD;
+        p->sched_class = &rt_sched_class;
+    } else if (p->policy == SCHED_WRR) {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        p->sched_class = &wrr_sched_class;
+    } else {
+        if (dl_prio(oldprio))
+            p->dl.dl_boosted = 0;
+        if (rt_prio(oldprio))
+            p->rt.timeout = 0;
+        p->sched_class = &fair_sched_class;
+    }
+
+    
+
 
 	p->prio = prio;
 
@@ -3977,15 +3988,18 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	 * Keep a potential priority boosting if called from
 	 * sched_setscheduler().
 	 */
+
 	p->prio = normal_prio(p);
 	if (keep_boost)
 		p->prio = rt_effective_prio(p, p->prio);
 
-	if (dl_prio(p->prio))
+    if (p->policy == SCHED_WRR)
+        p->sched_class = &wrr_sched_class;
+    else if (dl_prio(p->prio))
 		p->sched_class = &dl_sched_class;
-	else if (rt_prio(p->prio))
+	else if (rt_prio(p->prio))      // TODO add wrr
 		p->sched_class = &rt_sched_class;
-	else
+	else 
 		p->sched_class = &fair_sched_class;
 }
 
@@ -4005,6 +4019,108 @@ static bool check_same_owner(struct task_struct *p)
 	return match;
 }
 
+
+/*
+ * cpumask_andnot - *dstp = *src1p & ~*src2p
+ * @dstp: the cpumask result
+ * @src1p: the first input
+ * @src2p: the second input
+ *
+ * If *@dstp is empty, returns 0, else returns 1
+ */
+
+// migrate task to other cpu.
+
+
+
+
+static int migrate_wrr(struct task_struct *p, int dest_cpu)
+{   
+    struct rq_flags rf;
+    struct rq *rq;
+    int ret = 0;
+
+    rq = task_rq_lock(p, &rf);
+	update_rq_clock(rq);
+
+    if (task_running(rq, p) || p->state == TASK_WAKING) {
+		struct migration_arg arg = { p, dest_cpu };
+		/* Need help from migration thread: drop lock and wait. */
+		task_rq_unlock(rq, p, &rf);
+		stop_one_cpu(cpu_of(rq), migration_cpu_stop, &arg);
+		tlb_migrate_finish(p->mm);
+		return 0;
+	} else if (task_on_rq_queued(p)) {
+		/*
+		 * OK, since we're going to drop the lock immediately
+		 * afterwards anyway.
+		 */
+		rq = move_queued_task(rq, &rf, p, dest_cpu);
+	}
+    task_rq_unlock(rq, p, &rf);
+	return ret;
+}
+
+static int set_affinity_and_migrate_wrr(struct task_struct *p, int dest_cpu)
+{
+    const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+    struct cpumask p_mask; 
+    struct cpumask mask;
+
+    if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+    if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
+    if(sched_setaffinity(p->pid, &mask) != 0) return -1;  // set p's affinity. return set_affinity return value. (0 is success.)
+
+    return migrate_wrr(p, dest_cpu);
+}
+
+
+// migrate task if policy is wrr. return 0 if success, else return not zero.
+static int migrate_task_if_wrr(struct task_struct *p)
+{
+    struct rq *rq = task_rq(p);
+    struct rq *lowest_rq; 
+    
+    rcu_read_lock();
+    lowest_rq = find_lowest_weight_rq(p);
+    rcu_read_unlock();
+
+    if(cpu_of(rq) == WRR_NO_USE_CPU_NUM) // must migrate other queue
+    {
+        if(lowest_rq == NULL) //coudln't migrate. return error value.
+        {
+            //print_errmsg("there is no cpu to run this rq.", rq);
+            return -EFAULT;
+        }
+        else
+        {
+            //print_errmsg("this cpu is not runnable. enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+    }
+    else
+    {   
+        if(lowest_rq && ((lowest_rq->wrr.weight_sum < (rq->wrr).weight_sum))) // enqueue lowest queue.
+        {
+            //print_errmsg("enqueue to other cpu", rq);
+            return set_affinity_and_migrate_wrr(p, cpu_of(lowest_rq));
+        }
+        else
+        {
+            const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+            struct cpumask p_mask; 
+            struct cpumask mask;
+
+            if(sched_getaffinity(p->pid, &p_mask) != 0) return -1;     // get p's affinity
+            if(cpumask_andnot(&mask, &p_mask, no_use_cpu_mask) == 0) return -1; // if there is no cpu to run..
+            return sched_setaffinity(p->pid, &mask);  // set p's affinity. return set_affinity return value. (0 is success.)
+        }
+    }
+
+    return -EFAULT;
+}
+
+/* TODO add wrr */
 static int __sched_setscheduler(struct task_struct *p,
 				const struct sched_attr *attr,
 				bool user, bool pi)
@@ -4018,6 +4134,19 @@ static int __sched_setscheduler(struct task_struct *p,
 	int reset_on_fork;
 	int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
 	struct rq *rq;
+
+    if(policy == SCHED_WRR) // if policy is SCHED_WRR, it is could'nt move to other than cpu number zero, return error value.
+    {
+        //if(wrr_setaffinity_and_migrate(p) != 0) return -EPERM;
+        int wrr_retval=-1;
+        
+        const struct cpumask *no_use_cpu_mask = (cpumask_of(WRR_NO_USE_CPU_NUM));
+        struct cpumask mask;
+        if(cpumask_andnot(&mask, &(p->cpus_allowed), no_use_cpu_mask) == 0) return -EFAULT;
+
+        wrr_retval=migrate_task_if_wrr(p);
+        if(wrr_retval != 0) return wrr_retval;
+    }
 
 	/* The pi code expects interrupts enabled */
 	BUG_ON(pi && in_interrupt());
@@ -4037,8 +4166,8 @@ recheck:
 		~(SCHED_FLAG_RESET_ON_FORK | SCHED_FLAG_RECLAIM))
 		return -EINVAL;
 
-	/*
-	 * Valid priorities for SCHED_FIFO and SCHED_RR are
+	/*sudo screen -L /dev/ttyUSB0 115200 
+	 *sudo screen -L /dev/ttyUSB0 115200 nd SCHED_RR are
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
 	 * SCHED_BATCH and SCHED_IDLE is 0.
 	 */
@@ -5863,6 +5992,7 @@ void __init sched_init(void)
 		rq->calc_load_active = 0;
 		rq->calc_load_update = jiffies + LOAD_FREQ;
 		init_cfs_rq(&rq->cfs);
+		init_wrr_rq(&rq->wrr, i);
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -6756,3 +6886,123 @@ const u32 sched_prio_to_wmult[40] = {
  /*  10 */  39045157,  49367440,  61356676,  76695844,  95443717,
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
+
+
+/**
+ * sys_sched_setweight - set/change the process's wrr weight
+ * @pid: the pid in question.
+ * @weight: new weight.
+ *
+ * Return 0 on success. An error code otherwise.
+ */
+SYSCALL_DEFINE2(sched_setweight, pid_t, pid, int, weight)  
+{
+    struct task_struct *p;
+    struct rq *rq;
+    struct wrr_rq *wrr_rq;
+    struct sched_wrr_entity *wrr_se;
+    kuid_t root;
+    bool is_owner = false, is_root = false, granted = false;
+    int policy, old_weight;
+    int retval;
+    
+    if (pid < 0 || weight < WRR_MINWEIGHT || weight > WRR_MAXWEIGHT)
+        return -EINVAL;
+
+    /* get task_struct */
+    retval = -ESRCH;
+    rcu_read_lock();
+
+    p = find_process_by_pid(pid);
+
+    if (p) {
+        retval = security_task_getscheduler(p);
+
+        if (!retval) {
+            policy = p->policy;
+
+            retval = -EINVAL;
+            if (policy == SCHED_WRR) {
+
+                root.val = 0;
+
+                // TODO check privileges, not sure
+                is_root = uid_eq(current->cred->euid, root);
+                is_owner = check_same_owner(p);
+                
+                old_weight = p->wrr.weight;
+                wrr_se = &p->wrr;
+
+                retval = -EPERM;
+                if (is_root) {
+                    granted = true;
+                }
+                else if (is_owner) {
+                    if (weight <= old_weight) {
+                        granted = true;
+                    }
+                }
+
+                if (granted) {
+                    p->wrr.weight = weight;
+                    rq = cpu_rq(task_cpu(p));
+                    wrr_rq = &(rq->wrr);
+                    
+                    raw_spin_lock(&(wrr_rq->wrr_runtime_lock));
+                    wrr_rq->weight_sum += weight - old_weight;
+                    raw_spin_unlock(&(wrr_rq->wrr_runtime_lock));
+
+                    retval = 0;
+                }
+            }
+        }
+        else {
+            // security_task_getscheduler(p) failed
+            // if it works wrong way, security function should be deleted.
+        }
+    }
+
+    rcu_read_unlock();
+    return retval;
+}
+
+/**
+ * sys_sched_getweight - get the process's wrr weight
+ * @pid: the pid in question.
+ * 
+ * Return the weight of requested process. -1 on error
+ */
+SYSCALL_DEFINE1(sched_getweight, pid_t, pid)
+{
+    struct task_struct *p;
+    int policy, retval;
+
+    if (pid < 0)
+        return -EINVAL;
+
+    /* get task_struct */
+    retval = -ESRCH;
+    rcu_read_lock();
+    p = find_process_by_pid(pid);
+
+    if(p) {
+        retval = security_task_getscheduler(p);
+        
+        if (!retval) {
+            policy = p->policy;
+
+            if (policy == SCHED_WRR) {
+                retval = p->wrr.weight;
+            }
+            else {
+                retval = -EINVAL;
+            }
+        }
+        else {
+            // security_task_getscheduler(p) failed
+            // if it works wrong way, security function should be deleted.
+        }
+    }
+    rcu_read_unlock();
+    return retval;
+}

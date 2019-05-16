@@ -5,6 +5,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/sched/topology.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/wrr.h>
 #include <linux/sched/deadline.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/wake_q.h>
@@ -131,6 +132,11 @@ static inline int fair_policy(int policy)
 	return policy == SCHED_NORMAL || policy == SCHED_BATCH;
 }
 
+static inline int wrr_policy(int policy)
+{
+    return policy == SCHED_WRR;
+}
+
 static inline int rt_policy(int policy)
 {
 	return policy == SCHED_FIFO || policy == SCHED_RR;
@@ -140,9 +146,11 @@ static inline int dl_policy(int policy)
 {
 	return policy == SCHED_DEADLINE;
 }
+
+/* TODO add wrr sched_policy */
 static inline bool valid_policy(int policy)
 {
-	return idle_policy(policy) || fair_policy(policy) ||
+	return idle_policy(policy) || fair_policy(policy) || wrr_policy(policy) ||
 		rt_policy(policy) || dl_policy(policy);
 }
 
@@ -270,6 +278,7 @@ extern bool dl_cpu_busy(unsigned int cpu);
 
 struct cfs_rq;
 struct rt_rq;
+struct wrr_rq;
 
 extern struct list_head task_groups;
 
@@ -598,6 +607,16 @@ struct dl_rq {
 	u64 bw_ratio;
 };
 
+/* wrr rq */
+struct wrr_rq {
+    struct list_head queue;
+
+    int usable; // if this value is zero, cpu doesn't use wrr_scheduling.
+    int weight_sum;
+
+	raw_spinlock_t wrr_runtime_lock;
+};
+
 #ifdef CONFIG_SMP
 
 static inline bool sched_asym_prefer(int a, int b)
@@ -706,6 +725,7 @@ struct rq {
 	u64 nr_switches;
 
 	struct cfs_rq cfs;
+    struct wrr_rq wrr;
 	struct rt_rq rt;
 	struct dl_rq dl;
 
@@ -1494,6 +1514,7 @@ static inline void set_curr_task(struct rq *rq, struct task_struct *curr)
 extern const struct sched_class stop_sched_class;
 extern const struct sched_class dl_sched_class;
 extern const struct sched_class rt_sched_class;
+extern const struct sched_class wrr_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
 
@@ -1503,6 +1524,8 @@ extern const struct sched_class idle_sched_class;
 extern void update_group_capacity(struct sched_domain *sd, int cpu);
 
 extern void trigger_load_balance(struct rq *rq);
+extern void trigger_load_balance_wrr(struct rq *rq);
+extern void update_task_weight_wrr_by_task(struct task_struct *p, int new_weight);
 
 extern void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_mask);
 
@@ -1982,6 +2005,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 #endif /* CONFIG_SCHED_DEBUG */
 
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
+extern void init_wrr_rq(struct wrr_rq *wrr_rq, int cpu);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
 

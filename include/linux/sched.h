@@ -533,6 +533,16 @@ struct sched_dl_entity {
 	struct hrtimer inactive_timer;
 };
 
+
+/* wrr entity. see other entities */
+struct sched_wrr_entity {
+	struct list_head run_list;
+
+    int on_rq; // if queued in wrr_rq, set 1 else set zero.
+	int	time_slice;
+	int    weight;
+};
+
 union rcu_special {
 	struct {
 		u8			blocked;
@@ -602,6 +612,7 @@ struct task_struct {
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
+    struct sched_wrr_entity     wrr;
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
