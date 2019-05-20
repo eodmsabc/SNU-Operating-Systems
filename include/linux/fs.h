@@ -564,10 +564,6 @@ is_uncached_acl(struct posix_acl *acl)
 
 struct fsnotify_mark_connector;
 
-/* PROJ4 GPS inode interface */
-// int (*set_gps_location)(struct inode *);
-// int (*get_gps_location)(struct inode *, struct gps_location *);
-
 /*
  * Keep mostly read-only and often accessed (especially for
  * the RCU path lookup and 'stat' data) fields at the beginning
@@ -617,7 +613,7 @@ struct inode {
 	enum rw_hint		i_write_hint;
 	blkcnt_t		i_blocks;
 
-    /* PROJ4 GPS Location */
+    /* PROJ4 inode GPS Location */
     int i_lat_integer;
     int i_lat_fractional;
     int i_lng_integer;
@@ -1771,6 +1767,10 @@ struct inode_operations {
 			   umode_t create_mode, int *opened);
 	int (*tmpfile) (struct inode *, struct dentry *, umode_t);
 	int (*set_acl)(struct inode *, struct posix_acl *, int);
+
+    /* PROJ4 GPS inode interface */
+    int (*set_gps_location)(struct inode *);
+    int (*get_gps_location)(struct inode *, struct gps_location *);
 } ____cacheline_aligned;
 
 static inline ssize_t call_read_iter(struct file *file, struct kiocb *kio,
