@@ -613,13 +613,6 @@ struct inode {
 	enum rw_hint		i_write_hint;
 	blkcnt_t		i_blocks;
 
-    /* PROJ4 inode GPS Location */
-    int i_lat_integer;
-    int i_lat_fractional;
-    int i_lng_integer;
-    int i_lng_fractional;
-    int i_accuracy;
-
 #ifdef __NEED_I_SIZE_ORDERED
 	seqcount_t		i_size_seqcount;
 #endif

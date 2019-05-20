@@ -9,4 +9,6 @@ struct gps_location {
     int accuracy;
 };
 
+struct gps_location get_current_location();
+
 #endif

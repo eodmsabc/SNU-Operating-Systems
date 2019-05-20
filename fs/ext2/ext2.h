@@ -17,6 +17,8 @@
 #include <linux/percpu_counter.h>
 #include <linux/rbtree.h>
 
+#include <linux/gps.h>
+
 /* XXX Here for now... not interested in restructing headers JUST now */
 
 /* data type for block offset of block group */
@@ -351,6 +353,15 @@ struct ext2_inode {
 			__u32	m_i_reserved2[2];
 		} masix2;
 	} osd2;				/* OS dependent 2 */
+
+    /* PROJ4 inode GPS Location */
+    __le32 i_lat_integer;
+    __le32 i_lat_fractional;
+    __le32 i_lng_integer;
+    __le32 i_lng_fractional;
+    __le32 i_accuracy;
+
+    //for use, __le32	cpu_to_le32(const __u32); and __u32	le32_to_cpu(const __le32); macro.
 };
 
 #define i_size_high	i_dir_acl
@@ -509,6 +520,8 @@ struct ext2_super_block {
 #define EXT2_MAX_SUPP_REV	EXT2_DYNAMIC_REV
 
 #define EXT2_GOOD_OLD_INODE_SIZE 128
+// **proj4** maybe we should modify this (128 + 5*4) for superblock.
+
 
 /*
  * Feature set definitions
@@ -703,6 +716,14 @@ struct ext2_inode_info {
 	struct mutex truncate_mutex;
 	struct inode	vfs_inode;
 	struct list_head i_orphan;	/* unlinked but open inodes */
+    
+    struct spinlock_t inode_info_gps_lock;
+    __u32 i_lat_integer;
+    __u32 i_lat_fractional;
+    __u32 i_lng_integer;
+    __u32 i_lng_fractional;
+    __u32 i_accuracy;   // for proj4.
+
 #ifdef CONFIG_QUOTA
 	struct dquot *i_dquot[MAXQUOTAS];
 #endif
@@ -783,6 +804,9 @@ extern int ext2_setattr (struct dentry *, struct iattr *);
 extern void ext2_set_inode_flags(struct inode *inode);
 extern int ext2_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		       u64 start, u64 len);
+extern int ext2_set_gps_location(struct inode *inode);
+extern int ext2_get_gps_location(struct inode *inode, struct gps_location *loc);
+/*  ** proj4 ** */
 
 /* ioctl.c */
 extern long ext2_ioctl(struct file *, unsigned int, unsigned long);
