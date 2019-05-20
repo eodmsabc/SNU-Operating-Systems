@@ -36,6 +36,8 @@
 #include <linux/uuid.h>
 #include <linux/errseq.h>
 
+#include <linux/gps.h>
+
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
 
@@ -562,6 +564,10 @@ is_uncached_acl(struct posix_acl *acl)
 
 struct fsnotify_mark_connector;
 
+/* PROJ4 GPS inode interface */
+// int (*set_gps_location)(struct inode *);
+// int (*get_gps_location)(struct inode *, struct gps_location *);
+
 /*
  * Keep mostly read-only and often accessed (especially for
  * the RCU path lookup and 'stat' data) fields at the beginning
@@ -610,6 +616,13 @@ struct inode {
 	unsigned int		i_blkbits;
 	enum rw_hint		i_write_hint;
 	blkcnt_t		i_blocks;
+
+    /* PROJ4 GPS Location */
+    int i_lat_integer;
+    int i_lat_fractional;
+    int i_lng_integer;
+    int i_lng_fractional;
+    int i_accuracy;
 
 #ifdef __NEED_I_SIZE_ORDERED
 	seqcount_t		i_size_seqcount;
