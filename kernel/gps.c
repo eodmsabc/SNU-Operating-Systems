@@ -1,6 +1,7 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
-//#include <linux/stat.h>
+//#include <linux/path.h>
+#include <linux/namei.h>
 #include <linux/gps.h>
 
 static struct gps_location current_location = {
@@ -54,5 +55,24 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc)
  */
 SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_location __user *, loc)
 {
+    struct gps_location k_file_loc;
+    struct inode *inode;
+    struct path path;
+
+    if (!pathname || !loc)
+        return -EINVAL;
+
+    if (kern_path(pathname, LOOKUP_FOLLOW, &path))
+        return -EINVAL;
+
+    inode = path.dentry->d_inode;
+    
+    // TODO
+    // Need to add struct gps_location into inode
+    // get proper information from it
+    
+    if (copy_to_user(loc, &k_file_loc, sizeof(struct gps_location)))
+        return -EFAULT;
+
     return 0;
 }
