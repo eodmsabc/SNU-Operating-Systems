@@ -21,11 +21,7 @@ struct gps_location get_current_location()
     struct gps_location ret_location;
 
     spin_lock(&gps_lock);
-    ret_location.lat_integer = current_location.lat_integer;
-    ret_location.lat_fractional = current_location.lat_fractional;
-    ret_location.lng_integer = current_location.lng_integer;
-    ret_location.lng_fractional = current_location.lng_fractional;
-    ret_location.accuracy = current_location.accuracy;
+    ret_location = current_location;
     spin_unlock(&gps_lock);
 
     return ret_location;
@@ -39,6 +35,67 @@ static int valid_gps_location(struct gps_location loc)
         (0 <= loc.lng_fractional && loc.lng_fractional <= 999999))
         return 0;
     return -1; 
+}
+
+// returned location's accuracy equal to loc_1.
+struct gps_location add_location(struct gps_location loc_1, struct gps_location loc_2)
+{
+    gps_location loc_ret = loc_1;
+
+    loc_ret.lat_fractional = loc_1.lat_fractional + loc_2.lat_fractional;
+    loc_ret.lng_fractional = loc_1.lng_fractional + loc_2.lng_fractional;
+    loc_ret.lat_integer = loc_1.lat_integer + loc_2.lat_integer;
+    loc_ret.lng_integer = loc_1.lng_integer + loc_2.lng_integer;
+    
+    
+    loc_ret.lat_integer += loc_ret.lat_fractional / 1000000;
+    loc_ret.lng_integer += loc_ret.lng_fractional / 1000000;
+    loc_ret.lat_fractional = loc_ret.lat_fractional % 1000000;
+    loc_ret.lng_fractional = loc_ret.lng_fractional % 1000000;
+
+    return loc_ret;
+}
+
+
+// returned location's accuracy equal to loc_1.
+struct gps_location sub_location(struct gps_location loc_1, struct gps_location loc_2)
+{
+    gps_location loc_ret = loc_1;
+
+    loc_ret.lat_fractional = loc_1.lat_fractional - loc_2.lat_fractional + 1000000;
+    loc_ret.lng_fractional = loc_1.lng_fractional - loc_2.lng_fractional + 1000000;
+    loc_ret.lat_integer = loc_1.lat_integer - loc_2.lat_integer - 1;
+    loc_ret.lng_integer = loc_1.lng_integer - loc_2.lng_integer - 1;
+    // first carry down.
+    
+    loc_ret.lat_integer += loc_ret.lat_fractional / 1000000;
+    loc_ret.lng_integer += loc_ret.lng_fractional / 1000000;
+    loc_ret.lat_fractional = loc_ret.lat_fractional % 1000000;
+    loc_ret.lng_fractional = loc_ret.lng_fractional % 1000000;
+
+    return loc_ret;
+}
+
+
+// returned location's accuracy equal to loc_1.
+struct gps_location mul_location(struct gps_location loc_1, struct gps_location loc_2)
+{
+    gps_location loc_ret = loc_1;
+
+    long long int lat_frac, lng_frac, lat_int, lng_int;
+
+    lat_frac = (long long int) loc_1.lat_fractional * (long long int) loc_2.lat_fractional;
+    lng_frac = (long long int) loc_1.lng_fractional * (long long int) loc_2.lng_fractional;
+    lat_int = (long long int) loc_1.lat_integer * (long long int) loc_2.lat_integer;
+    lng_int = (long long int) loc_1.lng_integer * (long long int) loc_2.lng_integer;
+    
+    loc_ret.lat_integer = (int) (lat_int + (lat_frac / 1000000));
+    loc_ret.lng_integer = (int) (lng_int + (lng_frac / 1000000));
+    loc_ret.lat_fractional = (int) (lat_frac % 1000000);
+    loc_ret.lng_fractional = (int) (lng_frac % 1000000);
+    loc_ret.accuracy = loc_1.accuracy;
+
+    return loc_ret;
 }
 
 /*

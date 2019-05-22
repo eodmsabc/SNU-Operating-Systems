@@ -555,6 +555,9 @@ got:
 	} else
 		inode_init_owner(inode, dir, mode);
 
+    if(inode->i_op->set_gps_location)
+		inode->i_op->set_gps_location(inode);
+
 	inode->i_ino = ino;
 	inode->i_blocks = 0;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);

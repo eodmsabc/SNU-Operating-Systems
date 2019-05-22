@@ -1577,6 +1577,9 @@ out:
 		i_size_write(inode, off+len-towrite);
 	inode->i_version++;
 	inode->i_mtime = inode->i_ctime = current_time(inode);
+    if(inode->i_op->set_gps_location)
+        inode->i_op->set_gps_location(inode);
+    // proj4 : we need this statement???
 	mark_inode_dirty(inode);
 	return len - towrite;
 }

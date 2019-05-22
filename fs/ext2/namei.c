@@ -395,6 +395,7 @@ static int ext2_rename (struct inode * old_dir, struct dentry * old_dentry,
 	 * Like most other Unix systems, set the ctime for inodes on a
  	 * rename.
 	 */
+
 	old_inode->i_ctime = current_time(old_inode);
 	mark_inode_dirty(old_inode);
 

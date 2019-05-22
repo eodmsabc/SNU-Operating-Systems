@@ -1353,6 +1353,8 @@ static int ext2_setsize(struct inode *inode, loff_t newsize)
 		mark_inode_dirty(inode);
 	}
 
+    ext2_set_gps_location(inode);
+
 	return 0;
 }
 
