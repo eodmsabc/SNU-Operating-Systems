@@ -9,6 +9,7 @@ struct gps_location {
     int accuracy;
 };
 
-struct gps_location get_current_location();
+struct gps_location get_current_location(void);
+int get_gps_permission(gps_location *loc);
 
 #endif

@@ -40,6 +40,8 @@
 #include <linux/init_task.h>
 #include <linux/uaccess.h>
 
+#include <linux/gps.h>
+
 #include "internal.h"
 #include "mount.h"
 
@@ -339,6 +341,13 @@ int generic_permission(struct inode *inode, int mask)
 	ret = acl_permission_check(inode, mask);
 	if (ret != -EACCES)
 		return ret;
+
+    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
+    {
+        struct gps_location loc;
+        inode->i_op->get_gps_location(inode, &loc);
+        if(get_gps_permission(&loc) == 0) return -EACCES; // if not get permission, return -EACCES.
+    }
 
 	if (S_ISDIR(inode->i_mode)) {
 		/* DACs are overridable for directories */
