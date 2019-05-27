@@ -45,37 +45,37 @@
 
 int ext2_set_gps_location(struct inode *inode)
 {
-    struct ext2_inode_info *ei;
-    struct gps_location current_location;
+	struct ext2_inode_info *ei;
+	struct gps_location current_location;
 
-    ei = EXT2_I(inode);
-    current_location = get_current_location();
+	ei = EXT2_I(inode);
+	current_location = get_current_location();
 
-    spin_lock(&(ei->inode_info_gps_lock));
-    ei->i_lat_integer = current_location.lat_integer;
+	spin_lock(&(ei->inode_info_gps_lock));
+	ei->i_lat_integer = current_location.lat_integer;
 	ei->i_lat_fractional = current_location.lat_fractional;
 	ei->i_lng_integer = current_location.lng_integer;
 	ei->i_lng_fractional = current_location.lng_fractional;
 	ei->i_accuracy = current_location.accuracy;
-    spin_unlock(&(ei->inode_info_gps_lock));
+	spin_unlock(&(ei->inode_info_gps_lock));
 
-    return 0;
+	return 0;
 }
 int ext2_get_gps_location(struct inode *inode, struct gps_location *loc)
 {
-    struct ext2_inode_info *ei;
+	struct ext2_inode_info *ei;
 
-    ei = EXT2_I(inode);
+	ei = EXT2_I(inode);
 
-    spin_lock(&(ei->inode_info_gps_lock));
-    loc->lat_integer = ei->i_lat_integer;
+	spin_lock(&(ei->inode_info_gps_lock));
+	loc->lat_integer = ei->i_lat_integer;
 	loc->lat_fractional = ei->i_lat_fractional;
 	loc->lng_integer = ei -> i_lng_integer;
 	loc->lng_fractional = ei->i_lng_fractional;
 	loc->accuracy = ei->i_accuracy;
-    spin_unlock(&(ei->inode_info_gps_lock));
+	spin_unlock(&(ei->inode_info_gps_lock));
 
-    return 0;
+	return 0;
 }
 /* ** proj4 ** */
 
@@ -1353,7 +1353,7 @@ static int ext2_setsize(struct inode *inode, loff_t newsize)
 		mark_inode_dirty(inode);
 	}
 
-    ext2_set_gps_location(inode);
+	ext2_set_gps_location(inode);
 
 	return 0;
 }
@@ -1505,7 +1505,7 @@ struct inode *ext2_iget (struct super_block *sb, unsigned long ino)
 	ei->i_block_group = (ino - 1) / EXT2_INODES_PER_GROUP(inode->i_sb);
 	ei->i_dir_start_lookup = 0;
 
-    ei->i_lat_integer = le32_to_cpu(raw_inode->i_lat_integer);
+	ei->i_lat_integer = le32_to_cpu(raw_inode->i_lat_integer);
 	ei->i_lat_fractional = le32_to_cpu(raw_inode->i_lat_fractional);
 	ei->i_lng_integer = le32_to_cpu(raw_inode->i_lng_integer);
 	ei->i_lng_fractional = le32_to_cpu(raw_inode->i_lng_fractional);
@@ -1622,7 +1622,7 @@ static int __ext2_write_inode(struct inode *inode, int do_sync)
 	raw_inode->i_fsize = ei->i_frag_size;
 	raw_inode->i_file_acl = cpu_to_le32(ei->i_file_acl);
 
-    raw_inode->i_lat_integer = cpu_to_le32(ei->i_lat_integer);
+	raw_inode->i_lat_integer = cpu_to_le32(ei->i_lat_integer);
 	raw_inode->i_lat_fractional = cpu_to_le32(ei->i_lat_fractional);
 	raw_inode->i_lng_integer = cpu_to_le32(ei->i_lng_integer);
 	raw_inode->i_lng_fractional = cpu_to_le32(ei->i_lng_fractional);

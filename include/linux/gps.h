@@ -10,6 +10,6 @@ struct gps_location {
 };
 
 struct gps_location get_current_location(void);
-int get_gps_permission(gps_location *loc);
+//int get_gps_permission(gps_location *loc);
 
 #endif

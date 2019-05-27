@@ -115,8 +115,8 @@ static int ext2_create (struct inode * dir, struct dentry * dentry, umode_t mode
 		inode->i_fop = &ext2_file_operations;
 	}
 
-    if(inode->i_op->set_gps_location)
-        inode->i_op->set_gps_location(inode);
+	if(inode->i_op->set_gps_location)
+		inode->i_op->set_gps_location(inode);
 
 	mark_inode_dirty(inode);
 	return ext2_add_nondir(dentry, inode);
@@ -395,7 +395,6 @@ static int ext2_rename (struct inode * old_dir, struct dentry * old_dentry,
 	 * Like most other Unix systems, set the ctime for inodes on a
  	 * rename.
 	 */
-
 	old_inode->i_ctime = current_time(old_inode);
 	mark_inode_dirty(old_inode);
 

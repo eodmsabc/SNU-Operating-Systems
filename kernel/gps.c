@@ -16,7 +16,6 @@ static struct gps_location current_location = {
     .accuracy = 0
 };
 
-
 struct gps_location get_current_location(void)
 {
     struct gps_location ret_location;
@@ -44,7 +43,7 @@ static int valid_gps_location(struct gps_location loc)
 
 // this function called in fs/namei.c (generic_permission function.)
 // return 1 if current location & file location overlap (have permission), else return 0 (not have permission)
-int get_gps_permission(gps_location *loc)
+int check_gps_permission(struct gps_location *loc)
 {
 	struct gps_location curr_location;
 
@@ -58,7 +57,7 @@ int get_gps_permission(gps_location *loc)
 // returned location's accuracy equal to loc_1.
 struct gps_location add_location(struct gps_location loc_1, struct gps_location loc_2)
 {
-    gps_location loc_ret = loc_1;
+    struct gps_location loc_ret = loc_1;
 
     loc_ret.lat_fractional = loc_1.lat_fractional + loc_2.lat_fractional;
     loc_ret.lng_fractional = loc_1.lng_fractional + loc_2.lng_fractional;
@@ -78,7 +77,7 @@ struct gps_location add_location(struct gps_location loc_1, struct gps_location 
 // returned location's accuracy equal to loc_1.
 struct gps_location sub_location(struct gps_location loc_1, struct gps_location loc_2)
 {
-    gps_location loc_ret = loc_1;
+    struct gps_location loc_ret = loc_1;
 
     loc_ret.lat_fractional = loc_1.lat_fractional - loc_2.lat_fractional + 1000000;
     loc_ret.lng_fractional = loc_1.lng_fractional - loc_2.lng_fractional + 1000000;
@@ -98,7 +97,7 @@ struct gps_location sub_location(struct gps_location loc_1, struct gps_location 
 // returned location's accuracy equal to loc_1.
 struct gps_location mul_location(struct gps_location loc_1, struct gps_location loc_2)
 {
-    gps_location loc_ret;
+    struct gps_location loc_ret;
 
     long long int lat_1, lng_1, lat_2, lng_2;
 
@@ -141,9 +140,6 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc)
     if (!loc)
         return -EINVAL;
 
-    if(!access_ok(VERIFY_READ, loc, sizeof(strucy gps_location)))
-        return -EFAULT;
-
     if (copy_from_user(&new_location, loc, sizeof(struct gps_location)))
         return -EFAULT;
 
@@ -153,7 +149,7 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc)
 
     spin_lock(&gps_lock);
     current_location = new_location;
-    spin_unlock(&gps_unlock);
+    spin_unlock(&gps_lock);
 
     return 0;
 }
@@ -171,11 +167,16 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
     struct inode *inode;
     struct path path;
 	char * ker_pathname;
-
+    int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
     if (!pathname || !loc){
         return -EINVAL;
 	}
 
+    // statfs.c
+    // sys_statfs
+    // -> user_statfs
+    // -> user_path_at
+    /*
 	ker_pathname = kmalloc(sizeof(char) * 1024, GFP_KERNEL);
 	if(ker_pathname == NULL)
 	{
@@ -189,23 +190,20 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
 		return -EFAULT;
 	}
 
-    if(!access_ok(VERIFY_WRITE, loc, sizeof(struct gps_location)))
-	{
-		kfree(ker_pathname);
-		return -EFAULT;
-	}
-        
-
     if (kern_path(ker_pathname, LOOKUP_FOLLOW, &path))
 	{
 		kfree(ker_pathname);
         return -EINVAL;
 	}
+    */
+    if (user_path_at(AT_FDCWD, pathname, lookup_flags, &path)) {
+        return -EFAULT;
+    }
     inode = path.dentry->d_inode;
 
 	if(inode_permission(inode, MAY_READ))	// it calls generic_permission inside, so we don't care..
 	{
-		kfree(ker_pathname);
+		//kfree(ker_pathname);
         return -EACCES;
 	}
 
@@ -213,7 +211,7 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
 		inode->i_op->get_gps_location(inode, &k_file_loc);
 	else
 	{
-		kfree(ker_pathname);
+		//kfree(ker_pathname);
 		return -EFAULT;
 	}	// file is not EXT2 file system.
     
@@ -223,10 +221,10 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
     
     if (copy_to_user(loc, &k_file_loc, sizeof(struct gps_location)))
 	{
-		kfree(ker_pathname);
+		//kfree(ker_pathname);
 		return -EFAULT;
 	}
         
-	kfree(ker_pathname);
+	//kfree(ker_pathname);
     return 0;
 }

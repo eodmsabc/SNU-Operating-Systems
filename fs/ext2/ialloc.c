@@ -555,7 +555,7 @@ got:
 	} else
 		inode_init_owner(inode, dir, mode);
 
-    if(inode->i_op->set_gps_location)
+	if(inode->i_op->set_gps_location)
 		inode->i_op->set_gps_location(inode);
 
 	inode->i_ino = ino;

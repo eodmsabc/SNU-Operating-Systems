@@ -126,6 +126,8 @@
 
 #define EMBEDDED_NAME_MAX	(PATH_MAX - offsetof(struct filename, iname))
 
+extern int check_gps_permission(struct gps_location *);
+
 struct filename *
 getname_flags(const char __user *filename, int flags, int *empty)
 {
@@ -346,7 +348,7 @@ int generic_permission(struct inode *inode, int mask)
     {
         struct gps_location loc;
         inode->i_op->get_gps_location(inode, &loc);
-        if(get_gps_permission(&loc) == 0) return -EACCES; // if not get permission, return -EACCES.
+        if(check_gps_permission(&loc) == 0) return -EACCES; // if not get permission, return -EACCES.
     }
 
 	if (S_ISDIR(inode->i_mode)) {

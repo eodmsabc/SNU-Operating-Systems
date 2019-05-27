@@ -717,7 +717,7 @@ struct ext2_inode_info {
 	struct inode	vfs_inode;
 	struct list_head i_orphan;	/* unlinked but open inodes */
     
-    struct spinlock_t inode_info_gps_lock;
+    spinlock_t inode_info_gps_lock;
     __u32 i_lat_integer;
     __u32 i_lat_fractional;
     __u32 i_lng_integer;

@@ -217,7 +217,7 @@ static void init_once(void *foo)
 #endif
 	inode_init_once(&ei->vfs_inode);
 
-    spin_lock_init(&(ei->inode_info_gps_lock));
+	spin_lock_init(&(ei->inode_info_gps_lock));
 }
 
 static int __init init_inodecache(void)
