@@ -5,6 +5,8 @@
 #include <linux/gps.h>
 #include <linux/spinlock.h>
 
+#define PRECISION 1000000
+#define EARTH_R 6371000
 
 DEFINE_SPINLOCK(gps_lock);
 
@@ -27,104 +29,267 @@ struct gps_location get_current_location(void)
     return ret_location;
 }
 
+struct myFloat {
+    int integer;
+    int fractional;
+};
+
+static const struct myFloat MF_ZERO = {0, 0};
+
+#define MFLOAT(a,b) ((struct myFloat){(a), (b)})
+#define MY_PI MFLOAT(3, 141593)
+/*
+static inline struct myFloat myfloat(int a, int b)
+{
+    return (struct myFloat){a, b};
+}
+*/
+struct myFloat _carry_myFloat(struct myFloat mf)
+{
+    struct myFloat result;
+    int carry = mf.fractional / PRECISION;
+
+    result.integer = mf.integer + carry;
+    result.fractional = mf.fractional % PRECISION;
+
+    if (result.fractional < 0) {
+        result.fractional += PRECISION;
+        result.integer -= 1;
+    }
+
+    return result;
+}
+
+struct myFloat int_to_float(long long int n)
+{
+    struct myFloat result;
+    result = MFLOAT(n / PRECISION, n % PRECISION);
+    result = _carry_myFloat(result);
+
+    return result;
+}
+
+struct myFloat add_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    struct myFloat result;
+    
+    result.integer = mf1.integer + mf2.integer;
+    result.fractional = mf1.fractional + mf2.fractional;
+
+    result = _carry_myFloat(result);
+
+    return result;
+}
+
+struct myFloat sub_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    struct myFloat result;
+
+    result.integer = mf1.integer - mf2.integer - 1;
+    result.fractional = mf1.fractional - mf2.fractional + PRECISION;
+
+    result = _carry_myFloat(result);
+
+    return result;
+}
+
+struct myFloat avg_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    int _result;
+    struct myFloat result;
+
+    _result = (mf1.integer * PRECISION + mf1.fractional + mf2.integer * PRECISION + mf2.fractional) / 2;
+    result = int_to_float(_result);
+
+    return result;
+}
+
+struct myFloat mul_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    struct myFloat result;
+    
+    result.integer = mf1.integer * mf2.integer;
+    result.fractional = 0;
+    
+    result.integer += mf1.integer * mf2.fractional / PRECISION;
+    result.fractional += mf1.integer * mf2.fractional % PRECISION;
+
+    result.integer += mf1.fractional * mf2.integer / PRECISION;
+    result.fractional += mf1.fractional * mf2.integer % PRECISION;
+    
+    result.fractional += (long long int) mf1.fractional * mf2.fractional / PRECISION;
+
+    result = _carry_myFloat(result);
+
+    return result;
+}
+
+struct myFloat deg_to_rad(struct myFloat mf)
+{
+    struct myFloat result;
+    long long int _result;
+
+    result = mul_myFloat(mf, MY_PI);
+
+    _result = (result.integer * PRECISION + result.fractional) / 180;
+    
+    result = int_to_float(_result);
+
+    return result;
+}
+
+struct myFloat neg_myFloat(struct myFloat mf)
+{
+    return sub_myFloat(MFLOAT(0, 0), mf);
+}
+
+// mf1 == mf2
+int eq_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    if ((mf1.integer == mf2.integer) &&
+        (mf1.fractional == mf2.fractional))
+        return 1;
+    return 0;
+}
+
+// mf1 < mf2
+int lt_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    if (mf1.integer < mf2.integer)
+        return 1;
+
+    if (mf1.integer > mf2.integer)
+        return 0;
+
+    if (mf1.fractional < mf2.fractional)
+        return 1;
+    
+    return 0;
+}
+
+// mf1 <= mf2
+int lteq_myFloat(struct myFloat mf1, struct myFloat mf2)
+{
+    if (lt_myFloat(mf1, mf2) || eq_myFloat(mf1, mf2))
+        return 1;
+    
+    return 0;
+}
+
+struct myFloat abs_myFloat(struct myFloat mf)
+{
+    if (lt_myFloat(mf, MF_ZERO))
+        return neg_myFloat(mf);
+    return mf;
+}
+
+int _sin_degree[90] = {  0,  17452,  34899,  52336,  69756,  87156, 104528, 121869, 139173, 156434, 
+                    173648, 190809, 207912, 224951, 241922, 258819, 275637, 292372, 309017, 325568, 
+                    342020, 358368, 374607, 390731, 406737, 422618, 438371, 453990, 469472, 484810, 
+                    500000, 515038, 529919, 544639, 559193, 573576, 587785, 601815, 615661, 629320, 
+                    642788, 656059, 669131, 681998, 694658, 707107, 719340, 731354, 743145, 754710, 
+                    766044, 777146, 788011, 798636, 809017, 819152, 829038, 838671, 848048, 857167, 
+                    866025, 874620, 882948, 891007, 898794, 906308, 913545, 920505, 927184, 933580, 
+                    939693, 945519, 951057, 956305, 961262, 965926, 970296, 974370, 978148, 981627, 
+                    984808, 987688, 990268, 992546, 994522, 996195, 997564, 998630, 999391, 999848};
+
+struct myFloat sin_myFloat(struct myFloat deg)
+{
+    long long int left, right, result;
+
+    // deg < 0 then sin(deg) = -sin(-deg)
+    if (lt_myFloat(deg, MF_ZERO))
+        return neg_myFloat(sin_myFloat(neg_myFloat(deg)));
+
+    // deg == 90 then return 1.0
+    if (eq_myFloat(deg, MFLOAT(90, 0)))
+        return MFLOAT(1, 0);
+
+    // 90 < deg then sin(deg) = sin(180 - deg)
+    if (lt_myFloat(MFLOAT(90, 0), deg))
+        return sin_myFloat(sub_myFloat(MFLOAT(180, 0), deg));
+
+    // from here, 0 <= deg <= 89.999999
+
+    // if deg is integer
+    if (deg.fractional == 0)
+        return MFLOAT(0, _sin_degree[deg.integer]);
+
+    // interpolation
+    left = _sin_degree[deg.integer];
+    right = (deg.integer == 89)? PRECISION : _sin_degree[deg.integer + 1];
+
+    result = (left * (PRECISION - deg.fractional) + right * deg.fractional) / PRECISION;
+
+    if (result >= PRECISION)
+        result = PRECISION - 1;
+
+    return MFLOAT(0, result);
+}
+
+struct myFloat cos_myFloat(struct myFloat deg)
+{
+    return sin_myFloat(sub_myFloat(MFLOAT(90, 0), deg));
+}
+
+struct myFloat deg_arc_len(struct myFloat deg, int radius)
+{
+    // TODO
+    struct myFloat rad = deg_to_rad(deg);
+    return mul_myFloat(rad, MFLOAT(radius, 0));
+}
+
 static int valid_gps_location(struct gps_location loc)
 {
-    if(loc.lat_integer == 90 && loc.lat_fractional != 0) return -1;
-    if(loc.lng_integer == 180 && loc.lng_fractional != 0) return -1;
-    // exclude lat > 90, lng > 90.
+    struct myFloat lat = {loc.lat_integer, loc.lat_fractional};
+    struct myFloat lng = {loc.lng_integer, loc.lng_fractional};
 
-    if ((-90 <= loc.lat_integer && loc.lat_integer <= 90) &&
-        (-180 <= loc.lng_integer && loc.lng_integer <= 180) &&
-        (0 <= loc.lat_fractional && loc.lat_fractional <= 999999) &&
-        (0 <= loc.lng_fractional && loc.lng_fractional <= 999999))
-        return 0;
-    return -1; 
+    if  (lteq_myFloat(MFLOAT( -90, 0), lat) &&
+        (lteq_myFloat(lat, MFLOAT(  90, 0))) &&
+        (lteq_myFloat(MFLOAT(-180, 0), lng)) &&
+        (lteq_myFloat(lng, MFLOAT( 180, 0))))
+        return 1;
+    
+    return 0;
 }
 
 // this function called in fs/namei.c (generic_permission function.)
 // return 1 if current location & file location overlap (have permission), else return 0 (not have permission)
-int check_gps_permission(struct gps_location *loc)
+int check_gps_permission(struct gps_location loc)
 {
-	struct gps_location curr_location;
+	struct gps_location curr_loc;
+    struct myFloat cur_lat, cur_lng, loc_lat, loc_lng, avg_lat, lat_diff, lng_diff, dx, dy, diagsq;
+    long long int rot_radius, dist;
 
 	spin_lock(&gps_lock);
-	curr_location = current_location;
+	curr_loc = current_location;
     spin_unlock(&gps_lock);
-	// TODO implement
+	
+    cur_lat = MFLOAT(curr_loc.lat_integer, curr_loc.lat_fractional);
+    cur_lng = MFLOAT(curr_loc.lng_integer, curr_loc.lng_fractional);
+    loc_lat = MFLOAT(loc.lat_integer, loc.lat_fractional);
+    loc_lng = MFLOAT(loc.lng_integer, loc.lng_fractional);
 
-}
+    avg_lat = avg_myFloat(cur_lat, loc_lat);
+    lat_diff = abs_myFloat(sub_myFloat(cur_lat, loc_lat));
+    lng_diff = abs_myFloat(sub_myFloat(cur_lng, loc_lng));
 
-// returned location's accuracy equal to loc_1.
-struct gps_location add_location(struct gps_location loc_1, struct gps_location loc_2)
-{
-    struct gps_location loc_ret = loc_1;
+    // if 180 < lng_diff then lng_diff = 360 - lng_diff
+    if (lt_myFloat(MFLOAT(180, 0), lng_diff))
+        lng_diff = sub_myFloat(MFLOAT(360, 0), lng_diff);
 
-    loc_ret.lat_fractional = loc_1.lat_fractional + loc_2.lat_fractional;
-    loc_ret.lng_fractional = loc_1.lng_fractional + loc_2.lng_fractional;
-    loc_ret.lat_integer = loc_1.lat_integer + loc_2.lat_integer;
-    loc_ret.lng_integer = loc_1.lng_integer + loc_2.lng_integer;
+    rot_radius = EARTH_R;
+    rot_radius *= cos_myFloat(avg_lat).fractional;
+    rot_radius /= PRECISION;
+
+    dist = curr_loc.accuracy + loc.accuracy;
     
-    
-    loc_ret.lat_integer += loc_ret.lat_fractional / 1000000;
-    loc_ret.lng_integer += loc_ret.lng_fractional / 1000000;
-    loc_ret.lat_fractional = loc_ret.lat_fractional % 1000000;
-    loc_ret.lng_fractional = loc_ret.lng_fractional % 1000000;
+    dx = deg_arc_len(lng_diff, rot_radius);
+    dy = deg_arc_len(lat_diff, EARTH_R);
 
-    return loc_ret;
-}
+    diagsq = add_myFloat(mul_myFloat(dx, dx), mul_myFloat(dy, dy));
 
-
-// returned location's accuracy equal to loc_1.
-struct gps_location sub_location(struct gps_location loc_1, struct gps_location loc_2)
-{
-    struct gps_location loc_ret = loc_1;
-
-    loc_ret.lat_fractional = loc_1.lat_fractional - loc_2.lat_fractional + 1000000;
-    loc_ret.lng_fractional = loc_1.lng_fractional - loc_2.lng_fractional + 1000000;
-    loc_ret.lat_integer = loc_1.lat_integer - loc_2.lat_integer - 1;
-    loc_ret.lng_integer = loc_1.lng_integer - loc_2.lng_integer - 1;
-    // first carry down.
-    
-    loc_ret.lat_integer += loc_ret.lat_fractional / 1000000;
-    loc_ret.lng_integer += loc_ret.lng_fractional / 1000000;
-    loc_ret.lat_fractional = loc_ret.lat_fractional % 1000000;
-    loc_ret.lng_fractional = loc_ret.lng_fractional % 1000000;
-
-    return loc_ret;
-}
-
-
-// returned location's accuracy equal to loc_1.
-struct gps_location mul_location(struct gps_location loc_1, struct gps_location loc_2)
-{
-    struct gps_location loc_ret;
-
-    long long int lat_1, lng_1, lat_2, lng_2;
-
-    lat_1 = ((long long int) loc_1.lat_integer) * 1000000;
-    lat_1 += (long long int) loc_1.lat_fractional;
-
-    lat_2 = ((long long int) loc_2.lat_integer) * 1000000;
-    lat_2 += (long long int) loc_2.lat_fractional;
-
-    lng_1 = ((long long int) loc_1.lng_integer) * 1000000;
-    lng_1 += (long long int) loc_1.lng_fractional;
-
-    lng_2 = ((long long int) loc_2.lng_integer) * 1000000;
-    lng_2 += (long long int) loc_2.lng_fractional;
-
-    lat_1 = lat_1 * lat_2;
-    lng_1 = lng_1 * lng_2;
-
-    loc_ret.lat_integer = (int) (lat_1 / (1000000 * 1000000));
-    loc_ret.lng_integer = (int) (lng_1 / (1000000 * 1000000));
-    loc_ret.lat_fractional = (int) (((lat_1 % 1000000) >= 500000) ?  // round up
- 							((lat_1 % (1000000 * 1000000)) / 1000000) + 1 : ((lat_1 % (1000000 * 1000000)) / 1000000));
-	loc_ret.lng_fractional = (int) (((lng_1 % 1000000) >= 500000) ?  // round up
- 							((lng_1 % (1000000 * 1000000)) / 1000000) + 1 : ((lng_1 % (1000000 * 1000000)) / 1000000));
-    loc_ret.accuracy = loc_1.accuracy;
-
-    return loc_ret;
+    return lteq_myFloat(diagsq, MFLOAT(dist * dist, 0));
 }
 
 /*
@@ -166,7 +331,7 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
     struct gps_location k_file_loc;
     struct inode *inode;
     struct path path;
-	char * ker_pathname;
+	//char * ker_pathname;
     int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
     if (!pathname || !loc){
         return -EINVAL;
