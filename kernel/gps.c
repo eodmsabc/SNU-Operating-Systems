@@ -201,7 +201,7 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
     }
     inode = path.dentry->d_inode;
 
-	if(inode_permission(inode, MAY_READ))	// it calls generic_permission inside, so we don't care..
+	if(generic_permission(inode, MAY_READ))	// it calls generic_permission inside, so we don't care..
 	{
 		//kfree(ker_pathname);
         return -EACCES;

@@ -344,13 +344,6 @@ int generic_permission(struct inode *inode, int mask)
 	if (ret != -EACCES)
 		return ret;
 
-    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
-    {
-        struct gps_location loc;
-        inode->i_op->get_gps_location(inode, &loc);
-        if(check_gps_permission(&loc) == 0) return -EACCES; // if not get permission, return -EACCES.
-    }
-
 	if (S_ISDIR(inode->i_mode)) {
 		/* DACs are overridable for directories */
 		if (!(mask & MAY_WRITE))
@@ -399,6 +392,13 @@ static inline int do_inode_permission(struct inode *inode, int mask)
 		inode->i_opflags |= IOP_FASTPERM;
 		spin_unlock(&inode->i_lock);
 	}
+    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
+    {
+        struct gps_location loc;
+        inode->i_op->get_gps_location(inode, &loc);
+        if(check_gps_permission(&loc) == 0)
+            return -EACCES; // if not get permission, return -EACCES.
+    }
 	return generic_permission(inode, mask);
 }
 
