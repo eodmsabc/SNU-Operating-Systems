@@ -258,13 +258,23 @@ static int valid_gps_location(struct gps_location loc)
 int check_gps_permission(struct gps_location loc)
 {
 	struct gps_location curr_loc;
-    struct myFloat cur_lat, cur_lng, loc_lat, loc_lng, avg_lat, lat_diff, lng_diff, dx, dy, diagsq;
-    long long int rot_radius, dist;
+    int lat_diff, lng_diff, diff_mul;
+    //struct myFloat cur_lat, cur_lng, loc_lat, loc_lng, avg_lat, lat_diff, lng_diff, dx, dy, diagsq;
+    //long long int rot_radius, dist;
 
 	spin_lock(&gps_lock);
 	curr_loc = current_location;
     spin_unlock(&gps_lock);
-	
+
+    lat_diff = curr_loc.lat_integer - loc.lat_integer;
+    lng_diff = curr_loc.lng_integer - loc.lng_integer;
+    diff_mul = lat_diff * lng_diff;
+
+    if (-100 < diff_mul && diff_mul < 100) {
+        return 1;
+    }
+    return 0;
+    /*
     cur_lat = MFLOAT(curr_loc.lat_integer, curr_loc.lat_fractional);
     cur_lng = MFLOAT(curr_loc.lng_integer, curr_loc.lng_fractional);
     loc_lat = MFLOAT(loc.lat_integer, loc.lat_fractional);
@@ -290,6 +300,7 @@ int check_gps_permission(struct gps_location loc)
     diagsq = add_myFloat(mul_myFloat(dx, dx), mul_myFloat(dy, dy));
 
     return lteq_myFloat(diagsq, MFLOAT(dist * dist, 0));
+    */
 }
 
 /*
