@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
     gps.lng_integer = atoi(argv[2]);
     gps.lat_fractional = 0;
     gps.lng_fractional = 0;
-    gps.accuracy = 1000;
+    gps.accuracy = 100000;
     if (syscall(SYSCALL_SET_GPS_LOCATION, &gps) != 0) {
         printf("gps not set?\n");
     }
