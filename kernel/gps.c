@@ -8,6 +8,8 @@
 #define PRECISION 1000000
 #define EARTH_R 6371000
 
+extern int inode_permission_without_gps(struct inode*, int);
+
 DEFINE_SPINLOCK(gps_lock);
 
 static struct gps_location current_location = {
