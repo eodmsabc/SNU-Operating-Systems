@@ -32,8 +32,8 @@ struct gps_location get_current_location(void)
 }
 
 struct myFloat {
-    long long int integer;
-    long long int fractional;
+    int integer;
+    int fractional;
 };
 
 static const struct myFloat MF_ZERO = {0, 0};
@@ -49,7 +49,7 @@ static inline struct myFloat myfloat(int a, int b)
 struct myFloat _carry_myFloat(struct myFloat mf)
 {
     struct myFloat result;
-    long long int carry = mf.fractional / PRECISION;
+    int carry = mf.fractional / PRECISION;
 
     result.integer = mf.integer + carry;
     result.fractional = mf.fractional % PRECISION;
@@ -97,7 +97,7 @@ struct myFloat sub_myFloat(struct myFloat mf1, struct myFloat mf2)
 
 struct myFloat avg_myFloat(struct myFloat mf1, struct myFloat mf2)
 {
-    long long int _result;
+    int _result;
     struct myFloat result;
 
     _result = (mf1.integer * PRECISION + mf1.fractional + mf2.integer * PRECISION + mf2.fractional) / 2;
@@ -119,7 +119,7 @@ struct myFloat mul_myFloat(struct myFloat mf1, struct myFloat mf2)
     result.integer += mf1.fractional * mf2.integer / PRECISION;
     result.fractional += mf1.fractional * mf2.integer % PRECISION;
     
-    result.fractional += mf1.fractional * mf2.fractional / PRECISION;
+    result.fractional += (long long int) mf1.fractional * mf2.fractional / PRECISION;
 
     result = _carry_myFloat(result);
 
@@ -260,15 +260,13 @@ static int valid_gps_location(struct gps_location loc)
 int check_gps_permission(struct gps_location loc)
 {
 	struct gps_location curr_loc;
-    //int lat_diff, lng_diff, diff_mul;
-    struct myFloat cur_lat, cur_lng, loc_lat, loc_lng, avg_lat, lat_diff, lng_diff, dx, dy, diagsq;
-    long long int rot_radius, dist;
+    int lat_diff, lng_diff, diff_mul;
+    //struct myFloat cur_lat, cur_lng, loc_lat, loc_lng, avg_lat, lat_diff, lng_diff, dx, dy, diagsq;
+    //long long int rot_radius, dist;
 
 	spin_lock(&gps_lock);
 	curr_loc = current_location;
     spin_unlock(&gps_lock);
-
-    /*
 
     lat_diff = curr_loc.lat_integer - loc.lat_integer;
     lng_diff = curr_loc.lng_integer - loc.lng_integer;
@@ -278,8 +276,7 @@ int check_gps_permission(struct gps_location loc)
         return 1;
     }
     return 0;
-    */
-    
+    /*
     cur_lat = MFLOAT(curr_loc.lat_integer, curr_loc.lat_fractional);
     cur_lng = MFLOAT(curr_loc.lng_integer, curr_loc.lng_fractional);
     loc_lat = MFLOAT(loc.lat_integer, loc.lat_fractional);
@@ -305,6 +302,7 @@ int check_gps_permission(struct gps_location loc)
     diagsq = add_myFloat(mul_myFloat(dx, dx), mul_myFloat(dy, dy));
 
     return lteq_myFloat(diagsq, MFLOAT(dist * dist, 0));
+    */
 }
 
 /*
@@ -380,9 +378,8 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
         return -EFAULT;
     }
     inode = path.dentry->d_inode;
-    
-    // it calls inode_permission_without_gps ( modified version of inode_permission, just one diferrence it doesn't check gps for proj4. see fs/namei.c)
-	if(inode_permission_without_gps(inode, MAY_READ))	
+
+	if(generic_permission(inode, MAY_READ))	// it calls generic_permission inside, so we don't care..
 	{
 		//kfree(ker_pathname);
         return -EACCES;

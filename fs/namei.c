@@ -344,14 +344,6 @@ int generic_permission(struct inode *inode, int mask)
 	if (ret != -EACCES)
 		return ret;
 
-    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
-    {
-        struct gps_location loc;
-        inode->i_op->get_gps_location(inode, &loc);
-        if(check_gps_permission(loc) == 0)
-            return -EACCES; // if not get permission, return -EACCES.
-    }
-
 	if (S_ISDIR(inode->i_mode)) {
 		/* DACs are overridable for directories */
 		if (!(mask & MAY_WRITE))
@@ -400,6 +392,13 @@ static inline int do_inode_permission(struct inode *inode, int mask)
 		inode->i_opflags |= IOP_FASTPERM;
 		spin_unlock(&inode->i_lock);
 	}
+    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
+    {
+        struct gps_location loc;
+        inode->i_op->get_gps_location(inode, &loc);
+        if(check_gps_permission(loc) == 0)
+            return -EACCES; // if not get permission, return -EACCES.
+    }
 	return generic_permission(inode, mask);
 }
 
@@ -488,109 +487,6 @@ int inode_permission(struct inode *inode, int mask)
 	return __inode_permission(inode, mask);
 }
 EXPORT_SYMBOL(inode_permission);
-
-
-
-//for proj4, just copy & modified
-int generic_permission_without_gps(struct inode *inode, int mask)
-{
-	int ret;
-
-	/*
-	 * Do the basic permission checks.
-	 */
-	ret = acl_permission_check(inode, mask);
-	if (ret != -EACCES)
-		return ret;
-
-	if (S_ISDIR(inode->i_mode)) {
-		/* DACs are overridable for directories */
-		if (!(mask & MAY_WRITE))
-			if (capable_wrt_inode_uidgid(inode,
-						     CAP_DAC_READ_SEARCH))
-				return 0;
-		if (capable_wrt_inode_uidgid(inode, CAP_DAC_OVERRIDE))
-			return 0;
-		return -EACCES;
-	}
-
-	/*
-	 * Searching includes executable on directories, else just read.
-	 */
-	mask &= MAY_READ | MAY_WRITE | MAY_EXEC;
-	if (mask == MAY_READ)
-		if (capable_wrt_inode_uidgid(inode, CAP_DAC_READ_SEARCH))
-			return 0;
-	/*
-	 * Read/write DACs are always overridable.
-	 * Executable DACs are overridable when there is
-	 * at least one exec bit set.
-	 */
-	if (!(mask & MAY_EXEC) || (inode->i_mode & S_IXUGO))
-		if (capable_wrt_inode_uidgid(inode, CAP_DAC_OVERRIDE))
-			return 0;
-    
-	return -EACCES;
-}
-
-//for proj4, just copy
-static inline int do_inode_permission_without_gps(struct inode *inode, int mask)
-{
-	if (unlikely(!(inode->i_opflags & IOP_FASTPERM))) {
-		if (likely(inode->i_op->permission))
-			return inode->i_op->permission(inode, mask);
-
-		/* This gets set once for the inode lifetime */
-		spin_lock(&inode->i_lock);
-		inode->i_opflags |= IOP_FASTPERM;
-		spin_unlock(&inode->i_lock);
-	}
-	return generic_permission_without_gps(inode, mask);
-}
-
-//for proj4, just copy
-int __inode_permission_without_gps(struct inode *inode, int mask)
-{
-	int retval;
-
-	if (unlikely(mask & MAY_WRITE)) {
-		/*
-		 * Nobody gets write access to an immutable file.
-		 */
-		if (IS_IMMUTABLE(inode))
-			return -EPERM;
-
-		/*
-		 * Updating mtime will likely cause i_uid and i_gid to be
-		 * written back improperly if their true value is unknown
-		 * to the vfs.
-		 */
-		if (HAS_UNMAPPED_ID(inode))
-			return -EACCES;
-	}
-
-	retval = do_inode_permission_without_gps(inode, mask);
-	if (retval)
-		return retval;
-
-	retval = devcgroup_inode_permission(inode, mask);
-	if (retval)
-		return retval;
-
-	return security_inode_permission(inode, mask);
-}
-
-//for proj4, just copy
-int inode_permission_without_gps(struct inode *inode, int mask)
-{
-	int retval;
-
-	retval = sb_permission(inode->i_sb, inode, mask);
-	if (retval)
-		return retval;
-	return __inode_permission_without_gps(inode, mask);
-}
-EXPORT_SYMBOL(inode_permission_without_gps);
 
 /**
  * path_get - get a reference to a path
