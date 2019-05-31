@@ -943,6 +943,7 @@ static int ext2_write_end(struct file *file, struct address_space *mapping,
 	ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
 	if (ret < len)
 		ext2_write_failed(mapping, pos + len);
+	ext2_set_gps_location(mapping->host);
 	return ret;
 }
 
