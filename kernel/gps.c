@@ -297,10 +297,11 @@ int check_gps_permission(struct gps_location loc)
     lat_diff = abs_myFloat(sub_myFloat(cur_lat, loc_lat));
     lng_diff = abs_myFloat(sub_myFloat(cur_lng, loc_lng));
 
+    /*
     printk(KERN_ALERT "lat_diff is %lld.%lld, lng_diff is %lld.%lld",
             lat_diff.integer, lat_diff.fractional,
             lng_diff.integer, lng_diff.fractional);
-
+    */
     // if 180 < lng_diff then lng_diff = 360 - lng_diff
     if (lt_myFloat(MFLOAT(180, 0), lng_diff))
         lng_diff = sub_myFloat(MFLOAT(360, 0), lng_diff);
@@ -309,8 +310,10 @@ int check_gps_permission(struct gps_location loc)
     rot_radius *= cos_myFloat(avg_lat).fractional;
     rot_radius /= PRECISION;
 
+    /*
     printk(KERN_ALERT "rot_radius is %lld",
             rot_radius);
+    */
 
     dist = curr_loc.accuracy + loc.accuracy;
     
@@ -319,12 +322,13 @@ int check_gps_permission(struct gps_location loc)
 
     diagsq = add_myFloat(mul_myFloat(dx, dx), mul_myFloat(dy, dy));
 
+    /*
     printk(KERN_ALERT "dist is %lld",
             dist);
 
     printk(KERN_ALERT "diagsq is %lld.%lld",
             diagsq.integer, diagsq.fractional);
-
+    */
     return lteq_myFloat(diagsq, MFLOAT(dist * dist, 0));
 }
 
