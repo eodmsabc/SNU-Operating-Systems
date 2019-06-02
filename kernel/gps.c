@@ -253,6 +253,8 @@ static int valid_gps_location(struct gps_location loc)
     struct myFloat lat = {loc.lat_integer, loc.lat_fractional};
     struct myFloat lng = {loc.lng_integer, loc.lng_fractional};
 
+    if(loc.accuracy < 0) return 0;
+
     if  (lteq_myFloat(MFLOAT( -90, 0), lat) &&
         (lteq_myFloat(lat, MFLOAT(  90, 0))) &&
         (lteq_myFloat(MFLOAT(-180, 0), lng)) &&
@@ -400,6 +402,8 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
     }
     inode = path.dentry->d_inode;
 
+    
+
 	if(generic_permission(inode, MAY_READ))	// it calls generic_permission inside, so we don't care..
 	{
 		//kfree(ker_pathname);
@@ -411,7 +415,7 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
 	else
 	{
 		//kfree(ker_pathname);
-		return -EFAULT;
+		return -ENODEV;
 	}	// file is not EXT2 file system.
     
     // TODO
