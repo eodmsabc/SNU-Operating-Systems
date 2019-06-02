@@ -250,18 +250,18 @@ struct myFloat deg_arc_len(struct myFloat deg, int radius)
 
 static int valid_gps_location(struct gps_location loc)
 {
-    struct myFloat lat = {loc.lat_integer, loc.lat_fractional};
-    struct myFloat lng = {loc.lng_integer, loc.lng_fractional};
+    long long int lat = PRECISION * loc.lat_integer + loc.lat_fractional;
+	long long int lng = PRECISION * loc.lng_integer + loc.lng_fractional;
 
+	if(loc.lat_fractional<0 || loc.lat_fractional > 999999 || loc.lng_fractional <0 || loc.lng_fractional >999999)
+		return 0;
+
+	if(lat < -90*PRECISION || lat > 90*PRECISION || lng < -180*PRECISION || lng > 180*PRECISION)
+		return 0;
+    
     if(loc.accuracy < 0) return 0;
 
-    if  (lteq_myFloat(MFLOAT( -90, 0), lat) &&
-        (lteq_myFloat(lat, MFLOAT(  90, 0))) &&
-        (lteq_myFloat(MFLOAT(-180, 0), lng)) &&
-        (lteq_myFloat(lng, MFLOAT( 180, 0))))
-        return 1;
-    
-    return 0;
+    return 1;
 }
 
 // this function called in fs/namei.c (generic_permission function.)
