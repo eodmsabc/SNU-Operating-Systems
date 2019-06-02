@@ -40,6 +40,8 @@
 #include <linux/init_task.h>
 #include <linux/uaccess.h>
 
+#include <linux/gps.h>
+
 #include "internal.h"
 #include "mount.h"
 
@@ -123,6 +125,8 @@
  */
 
 #define EMBEDDED_NAME_MAX	(PATH_MAX - offsetof(struct filename, iname))
+
+extern int check_gps_permission(struct gps_location);
 
 struct filename *
 getname_flags(const char __user *filename, int flags, int *empty)
@@ -388,6 +392,13 @@ static inline int do_inode_permission(struct inode *inode, int mask)
 		inode->i_opflags |= IOP_FASTPERM;
 		spin_unlock(&inode->i_lock);
 	}
+    if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
+    {
+        struct gps_location loc;
+        inode->i_op->get_gps_location(inode, &loc);
+        if(check_gps_permission(loc) == 0)
+            return -EACCES; // if not get permission, return -EACCES.
+    }
 	return generic_permission(inode, mask);
 }
 
