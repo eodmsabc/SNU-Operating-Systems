@@ -1,6 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <linux/gps.h>
+#include <errno.h>
+#include <string.h>
+
 
 int main(int argc, char* argv[])
 {
@@ -11,7 +15,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     if (syscall(399, argv[1], &gps) != 0) {
-        printf("get gps failed for %s - check if file exists\n", argv[1]);
+        printf("GPS GET ERROR!: %s\n", strerror(errno));
         return -1;
     }
 

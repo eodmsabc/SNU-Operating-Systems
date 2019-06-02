@@ -28,7 +28,6 @@ $ make
 를 통해 테스트 프로그램을 빌드할 수 있고, make clean을 통해 만들어진 프로그램을 정리할 수 있다.
 
 
-
 ## Project Overview & Goals
 
 타이젠 커널의 ext2 파일 시스템에 gps location 관련 필드를 추가하고,
@@ -69,7 +68,7 @@ struct gps_location {
 ##### add gps related field to ext2 file system
 
 
-Geo-tagged file system을 구현하기 위해 ext2 파일시스템에 gps 관련 필드를 추가해야했다.
+프로젝트에서, Geo-tagged file system을 구현하기 위해 ext2 파일시스템에 gps 관련 필드를 추가해야했다.
 
 따라서 fs/ext2/ext2.h에 다음과 같이 필드를 추가했다.
 
@@ -177,7 +176,6 @@ fs/ext2/file.c의 ext2_file_inode_operations 구조체에 .set_gps_location, .ge
 
 그 후, fs/ext2와 fs의 여러 파일들에 대해 다음 로직들을 추가하여 파일이 만들어지거나 수정될때 gps location이 갱신되도록 하고, 필요한 연산들을 구현하였다.
 
-fs/namei.c : do_inode_permission에 gps location 통해 permission check logic 추가
 fs/ext2/super.c : init_once에 spin_lock_init 통해 스핀락 초기화
 fs/ext2/namei.c : ext2_create에 set_gps_location logic 추가.
 fs/ext2/inode.c : ext2_set_gps_location, ext2_get_gps_location 구현,
@@ -203,19 +201,17 @@ if (inode->i_op->set_gps_location)
 ##### how to check permission by gps & how to implement precision operation 
 
 
+gps 관련 필드를 ext2 파일시스템에 추가한 뒤로는, permission 체크를 위해 fs/namei.c 의
 
-
-
-
-
-           
+do_inode_permission 함수에 다음과 같이 gps location을 통해 permission check를 하는 로직을 추가하였다.
 
 
 extern int check_gps_permission(struct gps_location);
 
-
+'''
 static inline int do_inode_permission(struct inode *inode, int mask)
 {
+    ...
 
     if(inode->i_op->get_gps_location) // if inode has get_gps_location, this means that inode is ext2 regular file.
     {
@@ -226,121 +222,73 @@ static inline int do_inode_permission(struct inode *inode, int mask)
     }
 	return generic_permission(inode, mask);
 }
-
-
-
-get
-가
-
-먼저 이를 위해 다음 연산을 전체 file system의 inode_opertations에 추가했다.
-
-'''
-int (*set_gps_location)(struct inode *);
-int (*get_gps_location)(struct inode *, struct gps_location *);
 '''
 
+여기서 check_gps_permission 함수를 통해 현재 시스템의 location과 파일의 location 정보를 비교 한 뒤, 엑세스 가능한지 그렇지 않은지를 결정하게 된다.
 
 
-## High Level Design
+check_gps_permission은 우리가 gps.c에 구현한 함수로, 시스템의 현재 gps location이 file에 접근 가능한지를 결정한다.
+
+가정에서, 지구는 반지름 6371000m인 구로 가정하였다.
+
+두 좌표의 거리가 두 좌표에서 그린 원의 반지름의 합보다 작으면 파일에 접근할 수 있다는 것에 아이디어를 얻었다.
+
+두 좌표를 A,B, 위도, 경도를 각각 latA, latB, lngA, lngB라고 하고, 각 좌표에서의 원의 반지름을 dA, dB라 하자.
+
+그리고 두 좌표의 거리를 dist라 하면, 결국 dist^2 < (dA + dB)^2 이 되는지를 구하면 된다.
+
+따라서 dist만 구하면 되므로, 다음과 같은 과정을 통해 dist를 구했다.
+
+A,B 두 좌표에서 구 위에 각각 위도, 경도에 평행하게 선을 그은 뒤, 그 선들의 교점을 구한다. 이 점을 C라 하자. 
+C에서 A까지의 거리를 dx, C에서 B까지의 거리를 dy라 하면, 두 좌표의 위도, 경도가 많이 차이나지 않을때, 
+평면으로 근사할 수 있어 dist^2 = dx^2 + dy^2으로 근사가 가능하다.
+
+따라서 dx, dy를 구하는것이 우리의 목표다.
+
+호의 길이 = r*theta 에서, (theta의 단위 : radian)
+A와 B의 위도의 차이를 radian으로 환산한 뒤에, 다음과 같이 dy를 구했다.
+
+dy = |latA - latB| * R(지구 반지름)
 
 
+dx의 경우, R에 들어가는 값이 지구 반지름이 아니라, 그 위도에서의 자전 반지름이 된다.
+이때 만약 A와 B의 위도가 차이나는경우, A나 B중 어느 하나를 기준으로 자전반지름을 구하면 차이가 나므로,
+A와 B의 위도에 따라 자전반지름을 평균내어 구하였다.
 
-##### lock request implementation
+따라서 r을 자전반지름이라 하면,
 
+r = R(지구 반지름) * cos(avg(lngA, lngB))
 
-lock 요청을 할때, 다음 loop를 돌면서 락을 할당할지, 말지를 결정한다.
-
-```
-while(!reader_should_go(rot_lock))
-    {
-        mutex_unlock(&my_lock);
-        wait_for_completion(&(rot_lock->comp));
-        mutex_lock(&my_lock);
-        reinit_completion(&(rot_lock->comp)); // if wake up, completion need to reinitiating because completion has memory of complete(). multiple complete, multiple no-wait.
-    }
-```
-
-락 요청마다 우리가 구현한 rotation_lock 구조체를 생성한다. rotation_lock 구조체는 내부에 락을 요청한 프로세스의 정보, 락의 정보와 리눅스 lock structure중 하나인 completion을 원소로 가지게 된다.
-
-completion은 wait queue의 단순화된 버전인데, wait_for_completion(&comp)를 통해 comp가 진행하는 일이 끝날때까지 해당 쓰레드를 잠시 재울수 있고, 다른 쓰레드에서 complete(&comp)를 실행할때 wake up 하게 된다.
-
-따라서 위 루프에서 진행조건이 성립되지 않으면 wait을 통해 진행조건이 만족될 가능성이 생길때까지 잠들어 있다가, 깨어난뒤 진행조건을 다시 보고 진행할지 말지를 결정하게 된다.
+dx = |lngA - lngB| * r(자전 반지름)
 
 
-이때 completion의 경우, user-space에서의 condition variable과 다르게 memoryness를 가지고 있으므로,
-여러번 complete 요청을 받고 쓸데없이 계속 일어나는것을 막기 위해 reinit_completion을 통해 반복되는 wakeup을 없애주었다.
-
-completion을 기다리는 문장이 while loop 내부에 들어있으므로, 설사 false-wakeup이 일어나더라도 safety를 보장하게 하였다.
-
-##### unlocking our lock
-
-락을 풀어줄때는 현재 대기하고 있는 락 요청중 어떤 락 요청을 진행시킬지를 정해야 한다.
-
-우리 구현의 핵심만 뽑으면 다음과 같다. writer lock 해제할때의 예시이다.
-
-```
-    mutex_lock(&my_lock);
-
-    rot_lock = pop_node(degree, range, &writer_active_list);
-
-    retval = write_lock_release(rot_lock); //change current state.
-
-    inform_writer_at_current_rotation();
-    inform_reader_at_current_rotation();
-
-    mutex_unlock(&my_lock);
-```
-
-현재 active writer lock list에서 요청받은 lock을 제거하고, writer lock을 풀어준다. (write_lock_release)
-그리고 나서, 대기하고 있는 writer와 reader들에게 락이 해제되었음을 알려준다.
+따라서 이를 통해 dx, dy의 값을 구하고, dist를 구해서 이 값을 반지름의 합과 비교하여 permission 결정을 내리게 되었다.
 
 
-1. writer lock이 해제된경우, 현재 대기하고 있는 다른 writer lock이나 reader lock이 새로 할당될 수 있다.
-이때, 각 lock은 현재 rotation과 락이 요청한 범위가 맞아야하고, writer lock과 reader lock의 경우
-자신이 할당될 수 있는지 현재 상태를 체크하는 과정이 필요한데, 앞에서 락 요청을 구현할때 while loop에
-락 요청마다 현재 이 락 요청이 진행할 수 있는지 없는지를 체크하게 해놓았다.
-때문에 굳이 락을 풀어줄때 어떤 락 요청이 진행할 수 있을지 검사를 다시 할 필요가 없다고 생각하여,
-락이 진행할 수 있는 최소한의 조건만 만족하면 해당되는 락 요청들을 wakeup 하게 하였다.
-
-따라서 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 reader, writer 락 요청들을 모두 wakeup 하게 구현하였다.
-
-2. reader lock이 해제된경우, reader lock의 경우는 다른 reader lock과 lock region을 공유할 수 있기 때문에, reader lock이 해제되었다고 해서 지금까지 할당되지 못했던 reader lock 요청이 진행되는 경우는 존재하지 않는다.
-
-따라서 writer lock이 해제될때와 같이, 락이 요청한 범위내에 현재 rotation이 포함되기만 하면, 해당하는 writer 락 요청들만 모두 wakeup 하게 구현하였다.
-
-
-
-
-
-##### how to don't starve writer?
-
-이번 프로젝트를 진행하면서 가장 많이 신경썼던 부분은 writer가 starvation 하지 않게 하는 부분이었다.
-
-이를 달성하기 위해서는 어떨때 write lock을 걸수 있는지, read lock을 걸수 있는지 결정해야했다.
-
-따라서, read lock과  write lock 요청에서 다음과 같은 조건으로 진행하게 하였다.
-
-공통 조건으로는,
-1. 요청한 락이 current_rotation 범위내에 존재할것
-2. 락 요청을 받았을때, 현재 상태가 lock을 할당할수 있는 상태일것. 
-   (reader의 경우, read lock의 area에 해당하는 state들의 값이 양수일때,
-    writer의 경우, write lock의 area에 해당하는 state들의 값이 0일때)
-
-그리고 reader의 경우, 추가적으로 다음 조건을 검사한다.
-3. current_rotation에서 wait하고 있는 write lock 요청이 없을것.
-
-이 조건을 통해, write lock 요청이 대기하고 있을경우, read lock 요청이 어떤순서로 들어오든간에 최우선적으로 write lock에게 우선권을 부여하게 된다. 보통의 reader_writer lock의 경우는 writer보다 먼저 들어온 reader의 경우 writer보다 먼저 lock을 할당받는것이 보장되지만, 우리의 구현에서는
-writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우선적으로 lock을 할당하게 된다.
-
-이를 통해 writer-starvation 문제를 제거하였다.
-
+cos 함수의 값 계산은, sin 함수의 0도 ~ 90도까지의 각을 1도 단위로 테이블에 입력해 놓은다음, 그 각도를 interpolation을 해서 함숫값을 계산할 수 있도록 하였다.
 
 
 
 ## Test Results 
 
 ```
+root:~/test> ./file_loc /root/proj4/mydir/first
+/root/proj4/mydir/first location info
+latitude        longitude       accuracy(m)
+10.500000       20.351242       500
+google maps link: http://www.google.com/maps/place/10.500000, 20.351242
 
+root:~/test> ./file_loc /root/proj4/mydir/second
+/root/proj4/mydir/second location info
+latitude        longitude       accuracy(m)
+50.0        30.0        1000
+google maps link: http://www.google.com/maps/place/50.0, 30.0
+
+root:~/test> ./file_loc /root/proj4/mydir/third
+/root/proj4/mydir/third location info
+latitude        longitude       accuracy(m)
+50.1        30.1        50000
+google maps link: http://www.google.com/maps/place/50.1, 30.1
 
 
 
@@ -348,9 +296,9 @@ writer보다 먼저 들어온 reader가 있더라도 무조건 writer에게 우�
 
 
 
-* 커널에서 lock이 어떻게 동작하는지 파악할 수 있었다.
-* lock을 실제로 구현하면서, 좋은 디자인 패턴이 정말 중요함을 느꼈다. 교과서에 있는 구현패턴을 보지 않았으면 락을 구현하는데 굉장히 오래 걸렸을 것이다.
-* lock을 구현할때, safety와 performance를 둘다 만족하게 구현하는것이 까다로운 일임을 깨달았다.
-* simple is best라는것을 다시한번 느끼게 되었다. 특히 락같이 여러 오브젝트를 고려해야 하는 경우에는 전체 그림을 그리기가 까다로워서, 간편하고 범용적인 구현에서 조금씩 구체화 해가는 식으로 락을 구현하였다.
+* GPS 관련 정보를 추가하면서, 파일 시스템이 어떻게 구현되었는지 알아볼 수 있었다.
+* 커널 내부에서 아키텍처 관계없이 파일이 써질 수 있도록, 엔디안에 관계없는 타입을 따로 만들면서까지 호환성을 고려하였다는것을 알게 되었다.
+* 우리가 단순히 파일을 만들고, 지우고, 실행하는 과정에서 정말 많은 함수가 이러한 과정에 연관되어 있다는것을 알 수 있었다. 처음 구현을 할때는 몇가지 함수에 gps set 로직을 빼먹어서, 제대로 set이 안되어서 애를 많이 먹었었다.
+* 커널에서 floating point 연산을 직접 구현해보면서, 고정 소수점 연산을 구현할때 내부 자료형을 long long int가 아닌 int로 선언해서 연산에서 오버플로우가 발생하거나, 나머지 연산에서 주의를 기울이지 않아서 오류가 발생하는등의 문제가 발생했었는데, 특정 연산이 지원되지 않는 환경에서, 기존 환경이 지원하는 연산들을 가지고 새로운 연산을 구현하는것은 생각보다 어렵고 고려할것도 많다는 것을 알게 되었다.
 
-* OS 프로젝트를 진행할때는 빠른 시작이 중요함을 뼈저리게 느낄 수 있었다. 데드라인에 닥쳐서 구현을 시작했으면 정말 큰일날 뻔했다.
+* OS 과제를 통해 커널 구조에 대해 많은 것을 알게 되었다. 직접 머리 싸매면서 부딪혀 보지 않으면 알 수 없었던 지식들을 많이 얻어간 느낌이다. 
