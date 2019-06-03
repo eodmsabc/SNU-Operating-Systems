@@ -27,7 +27,7 @@ int main(int argc, char* argv[])
             gps.lng_integer, gps.lng_fractional,
             gps.accuracy);
 
-    printf("google maps link: http://www.google.com/maps/place/%d.%d, %d.%d",
+    printf("google maps link: https://www.google.com/maps/place/%d.%d,%d.%d",
             gps.lat_integer, gps.lat_fractional,
             gps.lng_integer, gps.lng_fractional);
 
