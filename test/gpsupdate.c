@@ -15,7 +15,7 @@
 void print_gps(struct gps_location loc)
 {
     printf("latitude\t\tlongitude\t\taccuracy(m)\n"
-            "%d.%d\t\t%d.%d\t\t%d\n",
+            "%d.%06d\t\t%d.%06d\t\t%d\n",
             loc.lat_integer, loc.lat_fractional,
             loc.lng_integer, loc.lng_fractional,
             loc.accuracy);
