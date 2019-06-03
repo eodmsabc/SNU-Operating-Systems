@@ -21,13 +21,13 @@ int main(int argc, char* argv[])
 
     printf("%s location info\n"
             "latitude\t\tlongitude\t\taccuracy(m)\n"
-            "%d.%d\t\t%d.%d\t\t%d\n",
+            "%d.%06d\t\t%d.%06d\t\t%d\n",
             argv[1],
             gps.lat_integer, gps.lat_fractional,
             gps.lng_integer, gps.lng_fractional,
             gps.accuracy);
 
-    printf("google maps link: https://www.google.com/maps/place/%d.%d,%d.%d",
+    printf("google maps link: https://www.google.com/maps/place/%d.%06d,%d.%06d\n",
             gps.lat_integer, gps.lat_fractional,
             gps.lng_integer, gps.lng_fractional);
 
