@@ -281,13 +281,13 @@ google maps link: http://www.google.com/maps/place/10.500000, 20.351242
 root:~/test> ./file_loc /root/proj4/mydir/second
 /root/proj4/mydir/second location info
 latitude        longitude       accuracy(m)
-50.0        30.0        1000
+50.000000       30.000000        1000
 google maps link: http://www.google.com/maps/place/50.0, 30.0
 
 root:~/test> ./file_loc /root/proj4/mydir/third
 /root/proj4/mydir/third location info
 latitude        longitude       accuracy(m)
-50.1        30.1        50000
+50.000001       30.000001        50000
 google maps link: http://www.google.com/maps/place/50.1, 30.1
 
 
